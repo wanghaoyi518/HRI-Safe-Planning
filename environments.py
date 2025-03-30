@@ -10,6 +10,7 @@ from dynamics import CarDynamics
 from Agents.agent import Agent
 from Agents.human import HumanAgent
 from Agents.robot import RobotAgent
+from rewards import create_robot_reward, create_attentive_reward, create_distracted_reward
 
 
 class Environment:
@@ -606,6 +607,7 @@ def create_highway_scenario(robot_lane: int = 1,
     robot = RobotAgent(
         dynamics, 
         robot_init_state,
+        reward=create_robot_reward(info_gain_weight=1.0),  # Add reward function
         name="robot",
         color="yellow"
     )
@@ -662,6 +664,7 @@ def create_intersection_scenario(robot_direction: str = "south",
     robot = RobotAgent(
         dynamics, 
         robot_init_state,
+        reward=create_robot_reward(info_gain_weight=1.0),  # Add reward function
         name="robot",
         color="yellow"
     )

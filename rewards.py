@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from typing import List, Dict, Callable, Tuple, Union, Optional
-from features import Feature, speed_feature, lane_keeping_feature, collision_avoidance_feature, control_smoothness_feature, road_boundary_feature
+from features import Feature, speed_preference_feature, lane_following_feature, obstacle_avoidance_feature, control_smoothness_feature, road_boundary_feature
 
 
 class Reward:
@@ -159,9 +159,9 @@ class HumanReward(ParameterizedReward):
         """Initialize with typical human driving preferences."""
         # Define base features for human driving
         base_features = [
-            (speed_feature(target_speed=1.0), 10.0),                    # Prefer driving at target speed
-            (lane_keeping_feature([0, 1, 0], 0.1), 1.0),                # Stay in lane
-            (control_smoothness_feature([(-1, 1), (-1, 2)]), 5.0),      # Smooth control inputs
+            (speed_preference_feature(target_speed=1.0), 10.0),                    # Prefer driving at target speed
+            (lane_following_feature(0.0), 1.0),                # Stay in lane
+            (control_smoothness_feature(), 5.0),      # Smooth control inputs
             (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 50.0)      # Avoid road boundaries
         ]
         
@@ -232,9 +232,9 @@ def create_aggressive_reward() -> HumanReward:
     reward = HumanReward()
     # Override with more aggressive weights
     reward.base_features = [
-        (speed_feature(target_speed=1.5), 15.0),                    # Higher target speed
-        (lane_keeping_feature([0, 1, 0], 0.1), 0.8),                # Less emphasis on lane keeping
-        (control_smoothness_feature([(-1, 1), (-1, 2)]), 3.0),      # Less emphasis on smooth controls
+        (speed_preference_feature(target_speed=1.5), 15.0),                    # Higher target speed
+        (lane_following_feature(0.0), 0.8),                # Less emphasis on lane keeping
+        (control_smoothness_feature(), 3.0),      # Less emphasis on smooth controls
         (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 45.0)      # Slightly less concern for boundaries
     ]
     return reward
@@ -245,9 +245,9 @@ def create_conservative_reward() -> HumanReward:
     reward = HumanReward()
     # Override with more conservative weights
     reward.base_features = [
-        (speed_feature(target_speed=0.7), 8.0),                     # Lower target speed
-        (lane_keeping_feature([0, 1, 0], 0.1), 1.5),                # More emphasis on lane keeping
-        (control_smoothness_feature([(-1, 1), (-1, 2)]), 7.0),      # More emphasis on smooth controls
+        (speed_preference_feature(target_speed=0.7), 8.0),                     # Lower target speed
+        (lane_following_feature(0.0), 1.5),                # More emphasis on lane keeping
+        (control_smoothness_feature(), 7.0),      # More emphasis on smooth controls
         (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 60.0)      # More concern for boundaries
     ]
     return reward
@@ -258,9 +258,9 @@ def create_attentive_reward() -> HumanReward:
     reward = HumanReward()
     # Override with attentive weights
     reward.base_features = [
-        (speed_feature(target_speed=1.0), 10.0),                    # Normal target speed
-        (lane_keeping_feature([0, 1, 0], 0.1), 1.3),                # Good lane keeping
-        (control_smoothness_feature([(-1, 1), (-1, 2)]), 5.0),      # Normal control smoothness
+        (speed_preference_feature(target_speed=1.0), 10.0),                    # Normal target speed
+        (lane_following_feature(0.0), 1.3),                # Good lane keeping
+        (control_smoothness_feature(), 5.0),      # Normal control smoothness
         (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 55.0)      # Higher concern for boundaries
     ]
     return reward
@@ -271,9 +271,9 @@ def create_distracted_reward() -> HumanReward:
     reward = HumanReward()
     # Override with distracted weights
     reward.base_features = [
-        (speed_feature(target_speed=1.0), 10.0),                    # Normal target speed
-        (lane_keeping_feature([0, 1, 0], 0.1), 0.7),                # Poorer lane keeping
-        (control_smoothness_feature([(-1, 1), (-1, 2)]), 4.0),      # Less smooth controls
+        (speed_preference_feature(target_speed=1.0), 10.0),                    # Normal target speed
+        (lane_following_feature(0.0), 0.7),                # Poorer lane keeping
+        (control_smoothness_feature(), 4.0),      # Less smooth controls
         (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 35.0)      # Less concern for boundaries
     ]
     return reward
@@ -291,9 +291,9 @@ def create_robot_reward(info_gain_weight: float = 1.0) -> RobotReward:
     """
     # Define base features for robot driving
     task_features = [
-        (speed_feature(target_speed=0.8), 8.0),                     # Slightly conservative speed
-        (lane_keeping_feature([0, 1, 0], 0.1), 1.2),                # Good lane keeping
-        (control_smoothness_feature([(-1, 1), (-1, 2)]), 6.0),      # Smooth controls
+        (speed_preference_feature(target_speed=0.8), 8.0),                     # Slightly conservative speed
+        (lane_following_feature(0.0), 1.2),                # Good lane keeping
+        (control_smoothness_feature(), 6.0),      # Smooth controls
         (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 55.0)      # High concern for boundaries
     ]
     
