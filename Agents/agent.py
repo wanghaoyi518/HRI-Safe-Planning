@@ -62,6 +62,30 @@ class Agent:
         # Compute next state using dynamics
         next_state = self.dynamics(self.state, self.action)
         
+        # Lane constraints for intersection scenario
+        # Check if on horizontal road
+        x, y = next_state[0].item(), next_state[1].item()
+        road_width = 0.2  # Must match the road_width in Intersection class
+        intersection_size = 0.3  # Must match the intersection_size in Intersection class
+        half_size = intersection_size / 2
+        
+        # Check if on horizontal road: y should be within road_width/2 of y=0
+        on_horizontal_road = abs(y) <= road_width/2
+        
+        # Check if on vertical road: x should be within road_width/2 of x=0
+        on_vertical_road = abs(x) <= road_width/2
+        
+        # Check if in intersection box
+        in_intersection = (abs(x) <= half_size) and (abs(y) <= half_size)
+        
+        # If not in intersection and not on a valid road, enforce lane constraints
+        if not in_intersection and not on_horizontal_road and not on_vertical_road:
+            # Find nearest lane center
+            if abs(y) < abs(x):  # Closer to horizontal road
+                next_state[1] = torch.clamp(next_state[1], -road_width/2, road_width/2)
+            else:  # Closer to vertical road
+                next_state[0] = torch.clamp(next_state[0], -road_width/2, road_width/2)
+        
         # Update state
         self.state = next_state
         

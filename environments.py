@@ -233,149 +233,149 @@ class Environment:
                zorder=11)
 
 
-class Highway(Environment):
-    """
-    Highway environment with multiple lanes.
-    Implements Scenario 1: Nudging In to Explore on a Highway
-    """
+# class Highway(Environment):
+#     """
+#     Highway environment with multiple lanes.
+#     Implements Scenario 1: Nudging In to Explore on a Highway
+#     """
     
-    def __init__(self, 
-                num_lanes: int = 2, 
-                lane_width: float = 0.13,
-                length: float = 2.0,
-                name: str = "highway"):
-        """
-        Initialize highway environment.
+#     def __init__(self, 
+#                num_lanes: int = 2, 
+#                lane_width: float = 0.13,
+#                length: float = 2.0,
+#                name: str = "highway"):
+#         """
+#         Initialize highway environment.
         
-        Args:
-            num_lanes: Number of lanes
-            lane_width: Width of each lane
-            length: Length of highway
-            name: Environment identifier
-        """
-        super().__init__(name)
+#         Args:
+#             num_lanes: Number of lanes
+#             lane_width: Width of each lane
+#             length: Length of highway
+#             name: Environment identifier
+#         """
+#         super().__init__(name)
         
-        self.num_lanes = num_lanes
-        self.lane_width = lane_width
-        self.length = length
+#         self.num_lanes = num_lanes
+#         self.lane_width = lane_width
+#         self.length = length
         
-        # Define lane centers
-        self.lane_centers = [(i - (num_lanes-1)/2) * lane_width for i in range(num_lanes)]
+#         # Define lane centers
+#         self.lane_centers = [(i - (num_lanes-1)/2) * lane_width for i in range(num_lanes)]
         
-        # Define environment boundaries
-        self.left_boundary = self.lane_centers[0] - lane_width/2
-        self.right_boundary = self.lane_centers[-1] + lane_width/2
+#         # Define environment boundaries
+#         self.left_boundary = self.lane_centers[0] - lane_width/2
+#         self.right_boundary = self.lane_centers[-1] + lane_width/2
         
-    def get_info(self) -> Dict:
-        """
-        Get current environment information.
+#     def get_info(self) -> Dict:
+#         """
+#         Get current environment information.
         
-        Returns:
-            Dictionary with environment information
-        """
-        info = super().get_info()
+#         Returns:
+#             Dictionary with environment information
+#         """
+#         info = super().get_info()
         
-        # Add lane information for each agent
-        info['lanes'] = {
-            agent_id: self.get_agent_lane(agent)
-            for agent_id, agent in self.agents.items()
-        }
+#         # Add lane information for each agent
+#         info['lanes'] = {
+#             agent_id: self.get_agent_lane(agent)
+#             for agent_id, agent in self.agents.items()
+#         }
         
-        # Add distances between agents
-        info['distances'] = {}
-        for id1 in self.agents:
-            for id2 in self.agents:
-                if id1 != id2:
-                    agent1 = self.agents[id1]
-                    agent2 = self.agents[id2]
+#         # Add distances between agents
+#         info['distances'] = {}
+#         for id1 in self.agents:
+#             for id2 in self.agents:
+#                 if id1 != id2:
+#                     agent1 = self.agents[id1]
+#                     agent2 = self.agents[id2]
                     
-                    # Compute distance between agents
-                    pos1 = agent1.position
-                    pos2 = agent2.position
-                    dist = torch.norm(pos1 - pos2)
+#                     # Compute distance between agents
+#                     pos1 = agent1.position
+#                     pos2 = agent2.position
+#                     dist = torch.norm(pos1 - pos2)
                     
-                    info['distances'][(id1, id2)] = dist.item()
+#                     info['distances'][(id1, id2)] = dist.item()
         
-        return info
+#         return info
         
-    def get_agent_lane(self, agent: Agent) -> Optional[int]:
-        """
-        Get lane index for agent.
+#     def get_agent_lane(self, agent: Agent) -> Optional[int]:
+#         """
+#         Get lane index for agent.
         
-        Args:
-            agent: Agent to get lane for
+#         Args:
+#             agent: Agent to get lane for
             
-        Returns:
-            Lane index or None if not in a lane
-        """
-        x = agent.position[0].item()
+#         Returns:
+#             Lane index or None if not in a lane
+#         """
+#         x = agent.position[0].item()
         
-        # Check if agent is within lane boundaries
-        if x < self.left_boundary or x > self.right_boundary:
-            return None
+#         # Check if agent is within lane boundaries
+#         if x < self.left_boundary or x > self.right_boundary:
+#             return None
             
-        # Find closest lane center
-        distances = [abs(x - center) for center in self.lane_centers]
-        lane_idx = distances.index(min(distances))
+#         # Find closest lane center
+#         distances = [abs(x - center) for center in self.lane_centers]
+#         lane_idx = distances.index(min(distances))
         
-        return lane_idx
+#         return lane_idx
     
-    def render_environment(self, ax):
-        """
-        Render highway environment.
+#     def render_environment(self, ax):
+#         """
+#         Render highway environment.
         
-        Args:
-            ax: Matplotlib axis
-        """
-        # Set axis limits
-        y_min = -self.length/2
-        y_max = self.length/2
-        x_min = self.left_boundary - self.lane_width/2
-        x_max = self.right_boundary + self.lane_width/2
+#         Args:
+#             ax: Matplotlib axis
+#         """
+#         # Set axis limits
+#         y_min = -self.length/2
+#         y_max = self.length/2
+#         x_min = self.left_boundary - self.lane_width/2
+#         x_max = self.right_boundary + self.lane_width/2
         
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
+#         ax.set_xlim(x_min, x_max)
+#         ax.set_ylim(y_min, y_max)
         
-        # Draw road surface
-        road = Rectangle(
-            (self.left_boundary, y_min),
-            self.right_boundary - self.left_boundary,
-            y_max - y_min,
-            facecolor='gray',
-            alpha=0.3,
-            zorder=1
-        )
-        ax.add_patch(road)
+#         # Draw road surface
+#         road = Rectangle(
+#             (self.left_boundary, y_min),
+#             self.right_boundary - self.left_boundary,
+#             y_max - y_min,
+#             facecolor='gray',
+#             alpha=0.3,
+#             zorder=1
+#         )
+#         ax.add_patch(road)
         
-        # Draw lane markers
-        for i in range(1, self.num_lanes):
-            lane_x = self.lane_centers[i-1] + self.lane_width/2
-            ax.plot([lane_x, lane_x], [y_min, y_max], 
-                   color='white', linestyle='--', alpha=0.7, zorder=2)
+#         # Draw lane markers
+#         for i in range(1, self.num_lanes):
+#             lane_x = self.lane_centers[i-1] + self.lane_width/2
+#             ax.plot([lane_x, lane_x], [y_min, y_max], 
+#                    color='white', linestyle='--', alpha=0.7, zorder=2)
             
-        # Draw road boundaries
-        ax.plot([self.left_boundary, self.left_boundary], [y_min, y_max], 
-               color='white', linestyle='-', alpha=1.0, linewidth=2, zorder=2)
-        ax.plot([self.right_boundary, self.right_boundary], [y_min, y_max], 
-               color='white', linestyle='-', alpha=1.0, linewidth=2, zorder=2)
+#         # Draw road boundaries
+#         ax.plot([self.left_boundary, self.left_boundary], [y_min, y_max], 
+#                color='white', linestyle='-', alpha=1.0, linewidth=2, zorder=2)
+#         ax.plot([self.right_boundary, self.right_boundary], [y_min, y_max], 
+#                color='white', linestyle='-', alpha=1.0, linewidth=2, zorder=2)
                
-        # Add labels
-        ax.set_title(f"Highway Environment - Time: {self.time}")
+#         # Add labels
+#         ax.set_title(f"Highway Environment - Time: {self.time}")
         
-    def is_complete(self) -> bool:
-        """
-        Check if highway scenario has completed.
+#     def is_complete(self) -> bool:
+#         """
+#         Check if highway scenario has completed.
         
-        Returns:
-            True if all agents have reached the end of the highway
-        """
-        # Check if any agent is still on the highway
-        for agent in self.agents.values():
-            y = agent.position[1].item()
-            if -self.length/2 <= y <= self.length/2:
-                return False
+#         Returns:
+#             True if all agents have reached the end of the highway
+#         """
+#         # Check if any agent is still on the highway
+#         for agent in self.agents.values():
+#             y = agent.position[1].item()
+#             if -self.length/2 <= y <= self.length/2:
+#                 return False
                 
-        return True
+#         return True
 
 
 class Intersection(Environment):
@@ -486,6 +486,90 @@ class Intersection(Environment):
                 
         return False
     
+    def is_on_road(self, agent: Agent) -> bool:
+        """
+        Check if agent is on a valid road segment.
+        
+        Args:
+            agent: Agent to check
+            
+        Returns:
+            True if agent is on a valid road
+        """
+        x = agent.position[0].item()
+        y = agent.position[1].item()
+        
+        x_min, x_max, y_min, y_max = self.intersection_bounds
+        
+        # Check if in intersection box
+        if x_min <= x <= x_max and y_min <= y <= y_max:
+            return True
+            
+        # Check if on horizontal road
+        if abs(y) <= self.road_width/2 and -2.0 <= x <= 2.0:
+            return True
+            
+        # Check if on vertical road
+        if abs(x) <= self.road_width/2 and -2.0 <= y <= 2.0:
+            return True
+            
+        return False
+    
+    def step(self):
+        """
+        Override step method to enforce lane constraints.
+        
+        Returns:
+            Dictionary with updated environment state
+        """
+        # Compute control for each agent
+        controls = {}
+        for agent_id, agent in self.agents.items():
+            # Create environment state with information about other agents
+            env_state = {
+                other_id: other_agent 
+                for other_id, other_agent in self.agents.items()
+                if other_id != agent_id
+            }
+            
+            # Compute control
+            control = agent.compute_control(self.time, agent.state, env_state)
+            controls[agent_id] = control
+            
+        # Apply control to each agent
+        for agent_id, agent in self.agents.items():
+            # Apply control and get next state
+            agent.step(controls[agent_id])
+            
+            # Apply position constraints to keep agent within [-2, 2] x [-2, 2]
+            if agent.state[0] < -2.0:
+                agent.state[0] = -2.0
+            elif agent.state[0] > 2.0:
+                agent.state[0] = 2.0
+                
+            if agent.state[1] < -2.0:
+                agent.state[1] = -2.0
+            elif agent.state[1] > 2.0:
+                agent.state[1] = 2.0
+            
+            # Additional check to enforce on-road constraints
+            if not self.is_on_road(agent):
+                # Reset to last known valid position
+                if len(agent.state_history) > 1:
+                    agent.state = agent.state_history[-2].clone()
+                    agent.state_history[-1] = agent.state.clone()
+        
+        # Save current state to history
+        self.save_state()
+        
+        # Update environment time
+        self.time += 1
+        
+        # Check for collisions and other environment-specific conditions
+        info = self.get_info()
+        
+        return info
+    
     def render_environment(self, ax):
         """
         Render intersection environment.
@@ -493,8 +577,8 @@ class Intersection(Environment):
         Args:
             ax: Matplotlib axis
         """
-        # Set axis limits
-        limit = self.intersection_size * 2
+        # Set axis limits to match position constraints
+        limit = 2.0  # Changed from self.intersection_size * 2 to match position constraints
         ax.set_xlim(-limit, limit)
         ax.set_ylim(-limit, limit)
         
@@ -554,12 +638,26 @@ class Intersection(Environment):
         # Add labels
         ax.set_title(f"Intersection Environment - Time: {self.time}")
         
-        # Add text showing crossing order if available
-        if self.crossed:
-            order_text = "Crossing Order: " + " → ".join(self.crossed)
-            ax.text(0, -limit * 0.9, order_text, 
-                   ha='center', va='center', fontsize=12,
-                   bbox=dict(facecolor='white', alpha=0.7))
+        # Draw boundary box to show position constraints
+        boundary_box = Rectangle(
+            (-2.0, -2.0),
+            4.0, 4.0,
+            fill=False,
+            edgecolor='red',
+            linestyle=':',
+            linewidth=1.5,
+            zorder=0
+        )
+        ax.add_patch(boundary_box)
+        
+        # Add a label for the constraint
+        ax.text(-1.9, -1.9, "Position Constraints", 
+               color='red', fontsize=8, ha='left', va='bottom')
+        
+        # Draw human goal
+        human_goal = (-2.0, 0.0)
+        ax.plot(human_goal[0], human_goal[1], 'r*', markersize=15, label='Human Goal')
+        ax.add_patch(plt.Circle(human_goal, 0.1, color='red', alpha=0.3))
     
     def reset(self):
         """Reset intersection environment."""
@@ -576,60 +674,60 @@ class Intersection(Environment):
         return len(self.crossed) == len(self.agents)
 
 
-def create_highway_scenario(robot_lane: int = 1, 
-                          human_lane: int = 0, 
-                          robot_y: float = -0.5,
-                          human_y: float = -0.1) -> Tuple[Highway, RobotAgent, HumanAgent]:
-    """
-    Create a highway scenario with robot and human agents.
+# def create_highway_scenario(robot_lane: int = 1, 
+#                           human_lane: int = 0, 
+#                           robot_y: float = -0.5,
+#                           human_y: float = -0.1) -> Tuple[Highway, RobotAgent, HumanAgent]:
+#     """
+#     Create a highway scenario with robot and human agents.
     
-    Args:
-        robot_lane: Initial lane for robot (0-indexed)
-        human_lane: Initial lane for human (0-indexed)
-        robot_y: Initial y position for robot
-        human_y: Initial y position for human
+#     Args:
+#         robot_lane: Initial lane for robot (0-indexed)
+#         human_lane: Initial lane for human (0-indexed)
+#         robot_y: Initial y position for robot
+#         human_y: Initial y position for human
         
-    Returns:
-        Tuple of (environment, robot_agent, human_agent)
-    """
-    # Create dynamics model
-    dynamics = CarDynamics(dt=0.1)
+#     Returns:
+#         Tuple of (environment, robot_agent, human_agent)
+#     """
+#     # Create dynamics model
+#     dynamics = CarDynamics(dt=0.1)
     
-    # Create environment
-    env = Highway(num_lanes=2, lane_width=0.13)
+#     # Create environment
+#     env = Highway(num_lanes=2, lane_width=0.13)
     
-    # Get lane centers
-    robot_x = env.lane_centers[robot_lane]
-    human_x = env.lane_centers[human_lane]
+#     # Get lane centers
+#     robot_x = env.lane_centers[robot_lane]
+#     human_x = env.lane_centers[human_lane]
     
-    # Create robot agent
-    robot_init_state = torch.tensor([robot_x, robot_y, np.pi/2, 0.3])
-    robot = RobotAgent(
-        dynamics, 
-        robot_init_state,
-        reward=create_robot_reward(info_gain_weight=1.0),  # Add reward function
-        name="robot",
-        color="yellow"
-    )
+#     # Create robot agent
+#     robot_init_state = torch.tensor([robot_x, robot_y, np.pi/2, 0.3])
+#     robot = RobotAgent(
+#         dynamics, 
+#         robot_init_state,
+#         reward=create_robot_reward(info_gain_weight=1.0),  # Add reward function
+#         name="robot",
+#         color="yellow"
+#     )
     
-    # Create human agent
-    human_init_state = torch.tensor([human_x, human_y, np.pi/2, 0.5])
-    human = HumanAgent(
-        dynamics,
-        human_init_state,
-        internal_state=torch.tensor([0.8, 0.5]),  # Default: attentive
-        name="human",
-        color="red"
-    )
+#     # Create human agent
+#     human_init_state = torch.tensor([human_x, human_y, np.pi/2, 0.5])
+#     human = HumanAgent(
+#         dynamics,
+#         human_init_state,
+#         internal_state=torch.tensor([0.8, 0.5]),  # Default: attentive
+#         name="human",
+#         color="red"
+#     )
     
-    # Register agents
-    env.register_agent(robot)
-    env.register_agent(human)
+#     # Register agents
+#     env.register_agent(robot)
+#     env.register_agent(human)
     
-    # Register human with robot
-    robot.register_human(human)
+#     # Register human with robot
+#     robot.register_human(human)
     
-    return env, robot, human
+#     return env, robot, human
 
 
 def create_intersection_scenario(robot_direction: str = "south", 
@@ -692,21 +790,21 @@ def create_intersection_scenario(robot_direction: str = "south",
 
 if __name__ == "__main__":
     # Test highway environment
-    print("Creating highway scenario...")
-    highway_env, highway_robot, highway_human = create_highway_scenario()
+    # print("Creating highway scenario...")
+    # highway_env, highway_robot, highway_human = create_highway_scenario()
     
-    # Render initial state
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-    highway_env.render(ax1)
+    # # Render initial state
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    # highway_env.render(ax1)
     
-    # Step a few times
-    for _ in range(10):
-        highway_env.step()
+    # # Step a few times
+    # for _ in range(10):
+    #     highway_env.step()
     
-    # Render final state
-    highway_env.render(ax2)
-    ax1.set_title("Highway - Initial State")
-    ax2.set_title("Highway - After 10 Steps")
+    # # Render final state
+    # highway_env.render(ax2)
+    # ax1.set_title("Highway - Initial State")
+    # ax2.set_title("Highway - After 10 Steps")
     
     # Test intersection environment
     print("\nCreating intersection scenario...")

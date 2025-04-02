@@ -148,7 +148,7 @@ class HumanAgent(Agent):
         
         # Apply reaction time based on attentiveness
         # Less attentive drivers react more slowly
-        reaction_delay = max(0, 1.0 - self.attentiveness)
+        reaction_delay = max(0.1, 1.0 - self.attentiveness)  # Minimum delay of 0.1
         
         # Mix between previous action and new best action based on reaction time
         final_action = (reaction_delay * self.action + 

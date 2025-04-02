@@ -6,7 +6,9 @@ import os
 from dynamics import CarDynamics
 from Agents.human import HumanAgent
 from Agents.robot import RobotAgent
-from environments import create_highway_scenario, create_intersection_scenario
+# from environments import create_highway_scenario, create_intersection_scenario
+from environments import create_intersection_scenario
+
 from rewards import create_attentive_reward, create_distracted_reward
 
 class DataGenerator:
@@ -37,40 +39,38 @@ class DataGenerator:
         # Run scenarios for different internal states
         for att in attention_values:
             for style in style_values:
-                # Run both highway and intersection scenarios
-                for scenario_type in ['highway', 'intersection']:
-                    # Create environment and agents
-                    if scenario_type == 'highway':
-                        env, robot, human = create_highway_scenario()
-                    else:
-                        env, robot, human = create_intersection_scenario()
+                scenario_type = 'intersection'
+                
+                # Create environment and agents
+                env, robot, human = create_intersection_scenario()
+                
+                # Set human internal state
+                human.internal_state = torch.tensor([att, style], dtype=torch.float32)
+                
+                # Set appropriate reward
+                if att > 0.6:
+                    human.reward = create_attentive_reward()
+                else:
+                    human.reward = create_distracted_reward()
+                
+                # Register robot and human
+                robot.register_human(human)
+                
+                # Run multiple episodes
+                for ep in range(num_episodes_per_config):
+                    print(f"Running {scenario_type} scenario with att={att:.1f}, style={style:.1f}, ep={ep+1}/{num_episodes_per_config}")
+                    trajectory = self._run_episode(env, robot, human)
                     
-                    # Set human internal state
-                    human.internal_state = torch.tensor([att, style], dtype=torch.float32)
+                    # Add metadata
+                    trajectory['internal_state'] = human.internal_state.clone()
+                    trajectory['scenario_type'] = scenario_type
+                    trajectory['episode'] = ep
                     
-                    # Set appropriate reward
-                    if att > 0.6:
-                        human.reward = create_attentive_reward()
-                    else:
-                        human.reward = create_distracted_reward()
+                    dataset.append(trajectory)
                     
-                    # Register robot and human
-                    robot.register_human(human)
-                    
-                    # Run multiple episodes
-                    for ep in range(num_episodes_per_config):
-                        print(f"Running {scenario_type} scenario with att={att:.1f}, style={style:.1f}, ep={ep+1}/{num_episodes_per_config}")
-                        trajectory = self._run_episode(env, robot, human)
-                        
-                        # Add metadata
-                        trajectory['internal_state'] = human.internal_state.clone()
-                        trajectory['scenario_type'] = scenario_type
-                        trajectory['episode'] = ep
-                        
-                        dataset.append(trajectory)
-                        
-                        # Reset environment
-                        env.reset()
+                    # Reset environment
+                    env.reset()
+        
         
         # Save the dataset
         filename = os.path.join(output_dir, "irl_dataset.pkl")
@@ -80,7 +80,7 @@ class DataGenerator:
         print(f"Dataset saved to {filename} with {len(dataset)} trajectories")
         return dataset
     
-    def _run_episode(self, env, robot, human, max_steps=50):
+    def _run_episode(self, env, robot, human, max_steps=20):
         """Run a single episode and collect trajectory data."""
         trajectory = {
             'human_states': [],
@@ -126,7 +126,7 @@ def main():
     generator = DataGenerator(dynamics)
     
     # Generate dataset
-    dataset = generator.generate_dataset(num_episodes_per_config=3)
+    dataset = generator.generate_dataset(num_episodes_per_config=1)
     
     print(f"Generated {len(dataset)} trajectory samples")
 

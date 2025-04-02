@@ -2,7 +2,6 @@ import torch
 import numpy as np
 from typing import Callable, List, Tuple, Union, Optional
 
-
 class Feature:
     """
     Feature class for computing reward components.
@@ -370,3 +369,30 @@ def create_driving_style_features(
         adjusted_features.append((feature, new_weight))
         
     return adjusted_features
+
+def create_goal_reaching_feature(goal_position, weight=10.0):
+    """
+    Create a feature for reaching a goal position.
+    
+    Args:
+        goal_position: Target position [x, y]
+        weight: Scaling factor for the feature
+        
+    Returns:
+        Feature for goal reaching
+    """
+    # Convert goal position to tensor if it isn't already
+    if not isinstance(goal_position, torch.Tensor):
+        goal_position = torch.tensor(goal_position, dtype=torch.float32)
+    
+    def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        # Extract robot position from state
+        robot_pos = x[:2]
+        
+        # Compute squared distance to goal
+        dist = torch.sum((robot_pos - goal_position) ** 2)
+        
+        # Reward decreases with distance
+        return -weight * dist
+    
+    return Feature(compute)

@@ -120,9 +120,9 @@ class ParameterizedReward(Reward):
         
         # Adjust weights based on feature type
         if "collision" in feature_name:
-            # Attentive drivers prioritize collision avoidance
-            # Conservative drivers prioritize safety
-            att_factor = 0.5 + 0.5 * attentiveness
+            # Attentive drivers prioritize collision avoidance but not excessively
+            # Reduced scaling effect of attentiveness (was 0.5 + 0.5 * attentiveness)
+            att_factor = 0.7 + 0.3 * attentiveness
             style_factor = 1.0 - 0.5 * driving_style
             return base_weight * att_factor * style_factor
             
@@ -133,7 +133,8 @@ class ParameterizedReward(Reward):
             
         elif "lane" in feature_name:
             # Attentive drivers stay in lanes better
-            att_factor = 0.7 + 0.3 * attentiveness
+            # Increased lane-following for attentive drivers (was 0.7 + 0.3)
+            att_factor = 0.6 + 0.4 * attentiveness
             return base_weight * att_factor
             
         elif "control" in feature_name:
@@ -160,7 +161,7 @@ class HumanReward(ParameterizedReward):
         # Define base features for human driving
         base_features = [
             (speed_preference_feature(target_speed=1.0), 10.0),                    # Prefer driving at target speed
-            (lane_following_feature(0.0), 1.0),                # Stay in lane
+            (lane_following_feature(0.0), 2.0),                # Stay in lane - increased weight from 1.0 to 2.0
             (control_smoothness_feature(), 5.0),      # Smooth control inputs
             (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 50.0)      # Avoid road boundaries
         ]
@@ -171,19 +172,32 @@ class HumanReward(ParameterizedReward):
 class RobotReward(Reward):
     """
     Reward function for robot planning.
-    Includes information gain component for active learning.
+    Includes components for information gain, collision avoidance, and goal-directed behavior.
     """
     
-    def __init__(self, task_features: List[Tuple[Feature, float]] = None, 
-                info_gain_weight: float = 1.0):
+    def __init__(self, 
+                 collision_avoidance_features: List[Tuple[Feature, float]] = None,
+                 goal_features: List[Tuple[Feature, float]] = None,
+                 info_gain_weight: float = 1.0):
         """
-        Initialize robot reward.
+        Initialize robot reward with different reward components.
         
         Args:
-            task_features: Features for the robot's task
+            collision_avoidance_features: Features for collision avoidance
+            goal_features: Features for goal-directed behavior
             info_gain_weight: Weight for information gain component
         """
-        super().__init__(features=task_features or [], name="robot_reward")
+        # Initialize with basic features if none provided
+        collision_features = collision_avoidance_features or []
+        goal_features = goal_features or []
+        
+        # Combine all features into a single list
+        all_features = collision_features + goal_features
+        
+        super().__init__(features=all_features, name="robot_reward")
+        
+        self.collision_avoidance_features = collision_features
+        self.goal_features = goal_features
         self.info_gain_weight = info_gain_weight
         self.belief_entropy_prev = None
         
@@ -199,9 +213,9 @@ class RobotReward(Reward):
             belief_entropy: Current entropy of belief distribution
             
         Returns:
-            Total reward including task reward and information gain
+            Total reward combining collision avoidance, goal, and information gain
         """
-        # Compute task reward
+        # Compute task reward (collision avoidance + goal)
         task_reward = super().__call__(t, x, u)
         
         # Add information gain if belief entropy is provided
@@ -218,9 +232,102 @@ class RobotReward(Reward):
             return task_reward + self.info_gain_weight * info_gain
         
         return task_reward
+    
+    def get_collision_avoidance_reward(self, t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        """
+        Compute just the collision avoidance component of the reward.
+        
+        Args:
+            t: Time step
+            x: State vector
+            u: Control vector
+            
+        Returns:
+            Collision avoidance reward
+        """
+        reward = torch.tensor(0.0, dtype=torch.float32)
+        
+        for feature, weight in self.collision_avoidance_features:
+            feature_value = feature(t, x, u)
+            reward = reward + weight * feature_value
+            
+        return reward
+    
+    def get_goal_reward(self, t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        """
+        Compute just the goal-directed component of the reward.
+        
+        Args:
+            t: Time step
+            x: State vector
+            u: Control vector
+            
+        Returns:
+            Goal-directed reward
+        """
+        reward = torch.tensor(0.0, dtype=torch.float32)
+        
+        for feature, weight in self.goal_features:
+            feature_value = feature(t, x, u)
+            reward = reward + weight * feature_value
+            
+        return reward
+    
+
+# Create reward functions for specific scenarios
+
+def create_obstacle_avoidance_feature(obstacle_positions, safety_threshold=0.2):
+    """
+    Create a feature for obstacle avoidance for the robot.
+    
+    Args:
+        obstacle_positions: List of positions of obstacles
+        safety_threshold: Minimum safe distance to obstacles
+        
+    Returns:
+        Feature for obstacle avoidance
+    """
+    def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        # Extract robot position from state
+        robot_pos = x[:2]
+        
+        # Compute penalty for being too close to obstacles
+        penalty = torch.tensor(0.0, dtype=torch.float32)
+        
+        for pos in obstacle_positions:
+            dist = torch.norm(robot_pos - pos)
+            if dist < safety_threshold:
+                penalty -= torch.exp((safety_threshold - dist) / 0.05) * 50.0
+                
+        return penalty
+    
+    return Feature(compute)
 
 
-# Pre-defined reward functions for common driving styles
+def create_goal_reaching_feature(goal_position, weight=10.0):
+    """
+    Create a feature for reaching a goal position.
+    
+    Args:
+        goal_position: Target position [x, y]
+        weight: Scaling factor for the feature
+        
+    Returns:
+        Feature for goal reaching
+    """
+    def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        # Extract robot position from state
+        robot_pos = x[:2]
+        
+        # Compute squared distance to goal
+        dist = torch.sum((robot_pos - goal_position) ** 2)
+        
+        # Reward decreases with distance
+        return -weight * dist
+    
+    return Feature(compute)
+
+
 def create_normal_reward() -> HumanReward:
     """Create a reward function for normal driving style."""
     reward = HumanReward()
@@ -257,11 +364,13 @@ def create_attentive_reward() -> HumanReward:
     """Create a reward function for attentive driving."""
     reward = HumanReward()
     # Override with attentive weights
+    human_goal = torch.tensor([-2.0, 0.0])  # Set human goal position
     reward.base_features = [
-        (speed_preference_feature(target_speed=1.0), 10.0),                    # Normal target speed
-        (lane_following_feature(0.0), 1.3),                # Good lane keeping
-        (control_smoothness_feature(), 5.0),      # Normal control smoothness
-        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 55.0)      # Higher concern for boundaries
+        (speed_preference_feature(target_speed=0.8), 10.0),  # Reduced from 1.0 to 0.8
+        (lane_following_feature(0.0), 2.5),
+        (control_smoothness_feature(), 5.0),
+        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 55.0),
+        (create_goal_reaching_feature(human_goal, weight=8.0), 1.0)  # Add goal-reaching feature
     ]
     return reward
 
@@ -270,34 +379,59 @@ def create_distracted_reward() -> HumanReward:
     """Create a reward function for distracted driving."""
     reward = HumanReward()
     # Override with distracted weights
+    human_goal = torch.tensor([-2.0, 0.0])  # Set human goal position
     reward.base_features = [
         (speed_preference_feature(target_speed=1.0), 10.0),                    # Normal target speed
         (lane_following_feature(0.0), 0.7),                # Poorer lane keeping
         (control_smoothness_feature(), 4.0),      # Less smooth controls
-        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 35.0)      # Less concern for boundaries
+        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 35.0),      # Less concern for boundaries
+        (create_goal_reaching_feature(human_goal, weight=5.0), 1.0)  # Add goal-reaching with lower weight
     ]
     return reward
 
 
-def create_robot_reward(info_gain_weight: float = 1.0) -> RobotReward:
+def create_robot_reward(collision_weight: float = 50.0, 
+                       goal_weight: float = 10.0,
+                       info_gain_weight: float = 1.0,
+                       goal_position=None,
+                       obstacle_positions=None) -> RobotReward:
     """
-    Create a default reward function for the robot.
+    Create a comprehensive reward function for the robot.
     
     Args:
+        collision_weight: Weight for collision avoidance features
+        goal_weight: Weight for goal-directed features
         info_gain_weight: Weight for information gain component
+        goal_position: Target position [x, y]
+        obstacle_positions: List of obstacle positions
         
     Returns:
         Robot reward function
     """
-    # Define base features for robot driving
-    task_features = [
-        (speed_preference_feature(target_speed=0.8), 8.0),                     # Slightly conservative speed
-        (lane_following_feature(0.0), 1.2),                # Good lane keeping
-        (control_smoothness_feature(), 6.0),      # Smooth controls
-        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 55.0)      # High concern for boundaries
+    # Default positions if none provided
+    if goal_position is None:
+        goal_position = torch.tensor([0, -2.0])
+    
+    if obstacle_positions is None:
+        obstacle_positions = []
+    
+    # Define collision avoidance features
+    collision_features = [
+        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), collision_weight),  # Avoid road boundaries
+        (create_obstacle_avoidance_feature(obstacle_positions), collision_weight)  # Avoid obstacles
     ]
     
-    return RobotReward(task_features=task_features, info_gain_weight=info_gain_weight)
+    # Define goal-directed features
+    goal_features = [
+        (speed_preference_feature(target_speed=1.2), goal_weight * 0.7),  # Increased from 0.8 to 1.2 and weight from 0.5 to 0.7
+        (create_goal_reaching_feature(goal_position, goal_weight), 1.5)  # Increased from 1.0 to 1.5
+    ]
+    
+    return RobotReward(
+        collision_avoidance_features=collision_features,
+        goal_features=goal_features,
+        info_gain_weight=info_gain_weight
+    )
 
 
 if __name__ == "__main__":
@@ -322,10 +456,23 @@ if __name__ == "__main__":
     print(f"Reward (attentive & aggressive): {reward_att_agg.item()}")
     print(f"Reward (distracted & conservative): {reward_dis_con.item()}")
     
-    # Test robot reward with information gain
-    robot_reward = create_robot_reward(info_gain_weight=2.0)
+    # Set up a goal and obstacle for robot reward
+    goal_pos = torch.tensor([5.0, 5.0])
+    obstacle_pos = [torch.tensor([2.0, 2.0])]
+    
+    # Test robot reward with information gain and different components
+    robot_reward = create_robot_reward(
+        collision_weight=50.0,
+        goal_weight=10.0,
+        info_gain_weight=2.0,
+        goal_position=goal_pos,
+        obstacle_positions=obstacle_pos
+    )
+    
     task_reward = robot_reward(0, x, u)
     print(f"Robot task reward: {task_reward.item()}")
+    print(f"- Collision avoidance component: {robot_reward.get_collision_avoidance_reward(0, x, u).item()}")
+    print(f"- Goal-directed component: {robot_reward.get_goal_reward(0, x, u).item()}")
     
     # Test with information gain
     entropy_before = torch.tensor(1.5)  # Higher entropy (more uncertainty)
