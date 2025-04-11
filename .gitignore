@@ -39,3 +39,7 @@ hri/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Ignore specific Python files
+irl_full.py
+irl.py
