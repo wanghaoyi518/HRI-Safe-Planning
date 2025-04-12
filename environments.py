@@ -10,6 +10,7 @@ from dynamics import CarDynamics
 from Agents.agent import Agent
 from Agents.human import HumanAgent
 from Agents.robot import RobotAgent
+from Agents.robot_simple import RobotSimple
 from rewards import create_robot_reward, create_attentive_reward, create_distracted_reward
 
 
@@ -787,6 +788,70 @@ def create_intersection_scenario(robot_direction: str = "south",
     
     return env, robot, human
 
+def create_intersection_scenario_simple(robot_direction: str = "south", 
+                                      human_direction: str = "west") -> Tuple[Intersection, RobotSimple, HumanAgent]:
+    """
+    Create an intersection scenario with a simple robot model for data generation.
+    
+    Args:
+        robot_direction: Initial direction for robot ("north", "south", "east", "west")
+        human_direction: Initial direction for human ("north", "south", "east", "west")
+        
+    Returns:
+        Tuple of (environment, robot_agent, human_agent)
+    """
+    # Create dynamics model
+    dynamics = CarDynamics(dt=0.1)
+    
+    # Create environment
+    env = Intersection(road_width=0.2, intersection_size=0.3)
+    
+    # Get stop line positions and headings
+    directions = {
+        "north": (0.0, -0.5, np.pi/2),    # (x, y, theta)
+        "south": (0.0, 0.5, -np.pi/2),
+        "east": (-0.5, 0.0, 0.0),
+        "west": (0.5, 0.0, np.pi)
+    }
+    
+    # Create simple robot agent without information gathering
+    robot_x, robot_y, robot_theta = directions[robot_direction]
+    robot_init_state = torch.tensor([robot_x, robot_y, robot_theta, 0.0])  # Initially stopped
+    
+    # Create a basic reward for the robot focused only on collision avoidance and goal reaching
+    goal_position = torch.tensor([0.0, -2.0])  # Default goal at bottom of screen
+    
+    # Use the RobotSimple class instead of regular RobotAgent
+    robot = RobotSimple(
+        dynamics, 
+        robot_init_state,
+        reward=create_robot_reward(
+            collision_weight=50.0,
+            goal_weight=10.0,
+            info_gain_weight=0.0,  # Zero info gain weight - crucial difference
+            goal_position=goal_position
+        ),
+        name="robot",
+        color="yellow",
+        goal_position=goal_position
+    )
+    
+    # Create human agent (same as original)
+    human_x, human_y, human_theta = directions[human_direction]
+    human_init_state = torch.tensor([human_x, human_y, human_theta, 0.0])  # Initially stopped
+    human = HumanAgent(
+        dynamics,
+        human_init_state,
+        internal_state=torch.tensor([0.8, 0.5]),  # Default will be overridden
+        name="human",
+        color="red"
+    )
+    
+    # Register agents
+    env.register_agent(robot)
+    env.register_agent(human)
+    
+    return env, robot, human
 
 if __name__ == "__main__":
     # Test highway environment

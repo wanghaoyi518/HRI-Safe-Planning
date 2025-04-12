@@ -26,7 +26,7 @@ class HumanAgent(Agent):
                  name: str = "human",
                  color: str = "red",
                  planning_horizon: int = 3,
-                 optimization_steps: int = 10):
+                 optimization_steps: int = 20):
         """
         Initialize human agent with dynamics and internal state.
         

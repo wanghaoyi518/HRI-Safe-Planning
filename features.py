@@ -184,6 +184,64 @@ def lane_following_feature(lane_center: float = 0.0):
     
     return Feature(compute)
 
+
+def create_goal_reaching_feature(goal_position, weight=10.0):
+    """
+    Create a feature for reaching a goal position.
+    
+    Args:
+        goal_position: Target position [x, y]
+        weight: Scaling factor for the feature
+        
+    Returns:
+        Feature for goal reaching
+    """
+    # Convert goal position to tensor if it isn't already
+    if not isinstance(goal_position, torch.Tensor):
+        goal_position = torch.tensor(goal_position, dtype=torch.float32)
+    
+    def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        # Extract robot position from state
+        robot_pos = x[:2]
+        
+        # Compute squared distance to goal
+        dist = torch.sum((robot_pos - goal_position) ** 2)
+        
+        # Reward decreases with distance
+        return -weight * dist
+    
+    return Feature(compute)
+
+ 
+
+# Create reward functions for specific scenarios
+
+def create_obstacle_avoidance_feature(obstacle_positions, safety_threshold=0.2):
+    """
+    Create a feature for obstacle avoidance for the robot.
+    
+    Args:
+        obstacle_positions: List of positions of obstacles
+        safety_threshold: Minimum safe distance to obstacles
+        
+    Returns:
+        Feature for obstacle avoidance
+    """
+    def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+        # Extract robot position from state
+        robot_pos = x[:2]
+        
+        # Compute penalty for being too close to obstacles
+        penalty = torch.tensor(0.0, dtype=torch.float32)
+        
+        for pos in obstacle_positions:
+            dist = torch.norm(robot_pos - pos)
+            if dist < safety_threshold:
+                penalty -= torch.exp((safety_threshold - dist) / 0.05) * 50.0
+                
+        return penalty
+    
+    return Feature(compute)
 def obstacle_avoidance_feature(obstacle_position: torch.Tensor = None, safety_threshold: float = 0.2):
     """
     Create a feature that rewards avoiding obstacles.
@@ -370,29 +428,3 @@ def create_driving_style_features(
         
     return adjusted_features
 
-def create_goal_reaching_feature(goal_position, weight=10.0):
-    """
-    Create a feature for reaching a goal position.
-    
-    Args:
-        goal_position: Target position [x, y]
-        weight: Scaling factor for the feature
-        
-    Returns:
-        Feature for goal reaching
-    """
-    # Convert goal position to tensor if it isn't already
-    if not isinstance(goal_position, torch.Tensor):
-        goal_position = torch.tensor(goal_position, dtype=torch.float32)
-    
-    def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        # Extract robot position from state
-        robot_pos = x[:2]
-        
-        # Compute squared distance to goal
-        dist = torch.sum((robot_pos - goal_position) ** 2)
-        
-        # Reward decreases with distance
-        return -weight * dist
-    
-    return Feature(compute)

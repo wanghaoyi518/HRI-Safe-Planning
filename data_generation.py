@@ -7,7 +7,7 @@ from dynamics import CarDynamics
 from Agents.human import HumanAgent
 from Agents.robot import RobotAgent
 # from environments import create_highway_scenario, create_intersection_scenario
-from environments import create_intersection_scenario
+from environments import create_intersection_scenario, create_intersection_scenario_simple
 
 from rewards import create_attentive_reward, create_distracted_reward
 
@@ -17,7 +17,6 @@ class DataGenerator:
     def __init__(self, dynamics):
         """Initialize with car dynamics model."""
         self.dynamics = dynamics
-        
     def generate_dataset(self, num_episodes_per_config=5, output_dir="data"):
         """
         Generate dataset by running simulations with different human models.
@@ -41,8 +40,8 @@ class DataGenerator:
             for style in style_values:
                 scenario_type = 'intersection'
                 
-                # Create environment and agents
-                env, robot, human = create_intersection_scenario()
+                # Use the simple scenario creation function instead
+                env, robot, human = create_intersection_scenario_simple()
                 
                 # Set human internal state
                 human.internal_state = torch.tensor([att, style], dtype=torch.float32)
@@ -52,9 +51,6 @@ class DataGenerator:
                     human.reward = create_attentive_reward()
                 else:
                     human.reward = create_distracted_reward()
-                
-                # Register robot and human
-                robot.register_human(human)
                 
                 # Run multiple episodes
                 for ep in range(num_episodes_per_config):
@@ -70,7 +66,6 @@ class DataGenerator:
                     
                     # Reset environment
                     env.reset()
-        
         
         # Save the dataset
         filename = os.path.join(output_dir, "irl_dataset.pkl")
