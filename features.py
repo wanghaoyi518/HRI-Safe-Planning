@@ -33,121 +33,6 @@ class Feature:
         """
         return self.f(t, x, u)
 
-
-# def speed_feature(target_speed: float = 1.0, weight: float = 1.0) -> Feature:
-#     """
-#     Create a feature that rewards being close to target speed.
-    
-#     Args:
-#         target_speed: Desired speed
-#         weight: Scaling factor for the feature
-        
-#     Returns:
-#         Feature that rewards being close to target speed
-#     """
-#     def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-#         # Assume x[3] is the velocity
-#         speed_diff = (x[3] - target_speed)
-#         return -weight * (speed_diff * speed_diff)
-    
-#     return Feature(compute)
-
-
-# def lane_keeping_feature(lane_center: List[float], 
-#                         lane_width: float,
-#                         weight: float = 1.0) -> Feature:
-#     """
-#     Create a feature that rewards staying close to lane center.
-    
-#     Args:
-#         lane_center: Center line of the lane [a, b, c] for ax + by + c = 0
-#         lane_width: Width of the lane
-#         weight: Scaling factor for the feature
-        
-#     Returns:
-#         Feature that rewards staying close to lane center
-#     """
-#     a, b, c = lane_center
-#     norm = np.sqrt(a**2 + b**2)
-    
-#     def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-#         # Compute perpendicular distance to line
-#         dist = torch.abs(a*x[0] + b*x[1] + c) / norm
-        
-#         # Normalize by lane width
-#         normalized_dist = dist / (lane_width/2)
-        
-#         # Quadratic penalty for deviation from center
-#         return -weight * (normalized_dist * normalized_dist)
-    
-#     return Feature(compute)
-
-
-# def collision_avoidance_feature(other_position: Callable[[int], torch.Tensor], 
-#                               min_distance: float = 0.2,
-#                               weight: float = 10.0) -> Feature:
-#     """
-#     Create a feature that penalizes getting too close to other agents.
-    
-#     Args:
-#         other_position: Function that returns position of other agent at time t
-#         min_distance: Minimum safe distance
-#         weight: Scaling factor for the feature
-        
-#     Returns:
-#         Feature that penalizes getting too close to other agents
-#     """
-#     def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-#         # Get other agent's position
-#         other_pos = other_position(t)
-        
-#         # Compute Euclidean distance between positions
-#         dx = x[0] - other_pos[0]
-#         dy = x[1] - other_pos[1]
-#         dist = torch.sqrt(dx*dx + dy*dy)
-        
-#         # Penalty increases as distance decreases below threshold
-#         if dist > min_distance:
-#             return torch.tensor(0.0, dtype=torch.float32)
-#         else:
-#             # Exponential penalty for getting too close
-#             return -weight * torch.exp((min_distance - dist) / 0.05)
-    
-#     return Feature(compute)
-
-
-# def control_smoothness_feature(bounds: List[Tuple[float, float]], 
-#                              weight: float = 0.5) -> Feature:
-#     """
-#     Create a feature that penalizes extreme control inputs.
-    
-#     Args:
-#         bounds: List of (min, max) tuples for each control dimension
-#         weight: Scaling factor for the feature
-        
-#     Returns:
-#         Feature that penalizes extreme control inputs
-#     """
-#     def compute(t: int, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-#         penalty = torch.tensor(0.0, dtype=torch.float32)
-        
-#         for i, (min_val, max_val) in enumerate(bounds):
-#             # Normalize control to [-1, 1] range based on bounds
-#             range_size = max_val - min_val
-#             mid_point = (max_val + min_val) / 2
-#             normalized_u = (u[i] - mid_point) / (range_size / 2)
-            
-#             # Quadratic penalty that increases as controls approach boundaries
-#             penalty = penalty - weight * (normalized_u * normalized_u)
-            
-#         return penalty
-    
-#     return Feature(compute)
-
-# features.py - Add to existing file
-
-# Add these IRL-specific feature functions
-
 def speed_preference_feature(target_speed: float = 1.0):
     """
     Create a feature that rewards driving at a target speed.
@@ -216,7 +101,7 @@ def create_goal_reaching_feature(goal_position, weight=10.0):
 
 # Create reward functions for specific scenarios
 
-def create_obstacle_avoidance_feature(obstacle_positions, safety_threshold=0.2):
+def robot_obstacle_avoidance_feature(obstacle_positions, safety_threshold=0.2):
     """
     Create a feature for obstacle avoidance for the robot.
     

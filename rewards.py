@@ -274,65 +274,95 @@ class RobotReward(Reward):
         return reward
 
 
-def create_normal_reward() -> HumanReward:
-    """Create a reward function for normal driving style."""
-    reward = HumanReward()
-    return reward
 
-
-def create_aggressive_reward() -> HumanReward:
-    """Create a reward function for aggressive driving style."""
+def create_parameterized_human_reward(internal_state: torch.Tensor) -> HumanReward:
+    """
+    Create a human reward function parameterized by internal state.
+    
+    Args:
+        internal_state: Human internal state [attentiveness, driving_style]
+        
+    Returns:
+        Personalized HumanReward based on internal state
+    """
+    # Extract attentiveness and driving style
+    attentiveness = internal_state[0].item()
+    driving_style = internal_state[1].item()
+    
+    # Set human goal
+    human_goal = torch.tensor([-2.0, 0.0])
+    
+    # Create base reward
     reward = HumanReward()
-    # Override with more aggressive weights
+    
+    # Calculate target speed based on driving style (aggressive = faster)
+    # Range from 0.6 (most conservative) to 1.8 (most aggressive)
+    target_speed = 0.6 + 1.2 * driving_style
+    
+    # Calculate speed weight - aggressive drivers prioritize speed more
+    # Range from 7.0 to 17.0
+    speed_weight = 7.0 + 10.0 * driving_style
+    
+    # Calculate lane following weight - attentive drivers follow lanes better
+    # Range from 0.5 to 4.5
+    lane_weight = 0.5 + 4.0 * attentiveness
+    
+    # Calculate control smoothness weight - conservative drivers have smoother controls
+    # Range from 2.0 to 8.0 with inverse relationship to driving style
+    control_weight = 8.0 - 6.0 * driving_style
+    
+    # Calculate boundary awareness - highly affected by both attentiveness and driving style
+    # Range from 20.0 to 80.0
+    boundary_weight = 20.0 + 60.0 * attentiveness * (1.0 - 0.5 * driving_style)
+    
+    # Calculate goal weight - attentive and aggressive drivers are more goal-focused
+    # Range from 3.0 to 15.0
+    goal_weight = 3.0 + 6.0 * attentiveness + 6.0 * driving_style
+    
+    # Create the parameterized feature set with calculated weights
     reward.base_features = [
-        (speed_preference_feature(target_speed=1.5), 15.0),                    # Higher target speed
-        (lane_following_feature(0.0), 0.8),                # Less emphasis on lane keeping
-        (control_smoothness_feature(), 3.0),      # Less emphasis on smooth controls
-        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 45.0)      # Slightly less concern for boundaries
+        (speed_preference_feature(target_speed=target_speed), speed_weight),
+        (lane_following_feature(0.0), lane_weight),
+        (control_smoothness_feature(), control_weight),
+        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), boundary_weight),
+        (create_goal_reaching_feature(human_goal, weight=goal_weight), 1.0)
     ]
-    return reward
-
-
-def create_conservative_reward() -> HumanReward:
-    """Create a reward function for conservative driving style."""
-    reward = HumanReward()
-    # Override with more conservative weights
-    reward.base_features = [
-        (speed_preference_feature(target_speed=0.7), 8.0),                     # Lower target speed
-        (lane_following_feature(0.0), 1.5),                # More emphasis on lane keeping
-        (control_smoothness_feature(), 7.0),      # More emphasis on smooth controls
-        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 60.0)      # More concern for boundaries
-    ]
-    return reward
-
-
-def create_attentive_reward() -> HumanReward:
-    """Create a reward function for attentive driving."""
-    reward = HumanReward()
-    # Override with attentive weights
-    human_goal = torch.tensor([-2.0, 0.0])  # Set human goal position
-    reward.base_features = [
-        (speed_preference_feature(target_speed=0.8), 10.0),  # Reduced from 1.0 to 0.8
-        (lane_following_feature(0.0), 2.5),
-        (control_smoothness_feature(), 5.0),
-        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 55.0),
-        (create_goal_reaching_feature(human_goal, weight=8.0), 1.0)  # Add goal-reaching feature
-    ]
-    return reward
-
-
-def create_distracted_reward() -> HumanReward:
-    """Create a reward function for distracted driving."""
-    reward = HumanReward()
-    # Override with distracted weights
-    human_goal = torch.tensor([-2.0, 0.0])  # Set human goal position
-    reward.base_features = [
-        (speed_preference_feature(target_speed=1.0), 10.0),                    # Normal target speed
-        (lane_following_feature(0.0), 0.7),                # Poorer lane keeping
-        (control_smoothness_feature(), 4.0),      # Less smooth controls
-        (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 35.0),      # Less concern for boundaries
-        (create_goal_reaching_feature(human_goal, weight=5.0), 1.0)  # Add goal-reaching with lower weight
-    ]
+    
+    # Add special behaviors for extreme internal states
+    
+    # Very distracted behavior (att < 0.2)
+    if attentiveness < 0.2:
+        # Add random decision feature to simulate unpredictable behavior
+        def random_decision(t, x, u):
+            # Seed based on time and position for consistency
+            seed = int(t * 10 + x[0].item() * 100) % 1000
+            torch.manual_seed(seed)
+            return torch.randn(1).item()
+        
+        distraction_feature = Feature(random_decision)
+        reward.base_features.append((distraction_feature, 3.0))
+    
+    # Very aggressive behavior (style > 0.9)
+    if driving_style > 0.9:
+        # Add impatience feature - penalty proportional to time spent in same position
+        def impatience_feature(t, x, u):
+            # Penalize low speeds more heavily as time increases
+            return -0.1 * t * torch.abs(x[3] - target_speed)
+        
+        reward.base_features.append((Feature(impatience_feature), 2.0))
+    
+    # Very careful behavior (att > 0.9 and style < 0.3)
+    if attentiveness > 0.9 and driving_style < 0.3:
+        # Add extra caution near boundaries
+        boundary_buffer = 0.05
+        def extra_caution_feature(t, x, u):
+            # Add penalty for being close to lane edges or other boundaries
+            pos = x[:2]
+            dist_to_center = torch.abs(pos[0])  # Distance from lane center
+            return -5.0 * torch.exp(-10.0 * (dist_to_center - 0.1)**2)
+        
+        reward.base_features.append((Feature(extra_caution_feature), 5.0))
+    
     return reward
 
 
@@ -364,7 +394,7 @@ def create_robot_reward(collision_weight: float = 50.0,
     # Define collision avoidance features
     collision_features = [
         (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), collision_weight),  # Avoid road boundaries
-        (create_obstacle_avoidance_feature(obstacle_positions), collision_weight)  # Avoid obstacles
+        (robot_obstacle_avoidance_feature(obstacle_positions), collision_weight)  # Avoid obstacles
     ]
     
     # Define goal-directed features

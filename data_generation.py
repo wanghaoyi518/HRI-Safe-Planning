@@ -6,10 +6,8 @@ import os
 from dynamics import CarDynamics
 from Agents.human import HumanAgent
 from Agents.robot import RobotAgent
-# from environments import create_highway_scenario, create_intersection_scenario
-from environments import create_intersection_scenario, create_intersection_scenario_simple
-
-from rewards import create_attentive_reward, create_distracted_reward
+from environments import *
+from rewards import *
 
 class DataGenerator:
     """Generate synthetic data for training IRL models."""
@@ -46,11 +44,8 @@ class DataGenerator:
                 # Set human internal state
                 human.internal_state = torch.tensor([att, style], dtype=torch.float32)
                 
-                # Set appropriate reward
-                if att > 0.6:
-                    human.reward = create_attentive_reward()
-                else:
-                    human.reward = create_distracted_reward()
+                # Set appropriate reward - pass the internal state as argument
+                human.reward = create_parameterized_human_reward(human.internal_state)
                 
                 # Run multiple episodes
                 for ep in range(num_episodes_per_config):

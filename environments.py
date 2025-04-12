@@ -11,7 +11,7 @@ from Agents.agent import Agent
 from Agents.human import HumanAgent
 from Agents.robot import RobotAgent
 from Agents.robot_simple import RobotSimple
-from rewards import create_robot_reward, create_attentive_reward, create_distracted_reward
+from rewards import *
 
 
 class Environment:

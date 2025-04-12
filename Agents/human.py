@@ -20,25 +20,15 @@ class HumanAgent(Agent):
     """
     
     def __init__(self, dynamics, 
-                 initial_state: Union[np.ndarray, torch.Tensor],
-                 internal_state: Union[np.ndarray, torch.Tensor] = None,
-                 reward: ParameterizedReward = None,
-                 name: str = "human",
-                 color: str = "red",
-                 planning_horizon: int = 3,
-                 optimization_steps: int = 20):
+             initial_state: Union[np.ndarray, torch.Tensor],
+             internal_state: Union[np.ndarray, torch.Tensor] = None,
+             reward: ParameterizedReward = None,
+             name: str = "human",
+             color: str = "red",
+             planning_horizon: int = 5,
+             optimization_steps: int = 20):
         """
         Initialize human agent with dynamics and internal state.
-        
-        Args:
-            dynamics: Dynamics model for state transitions
-            initial_state: Initial state of the agent
-            internal_state: Internal state [attentiveness, driving_style]
-            reward: Reward function for decision making
-            name: Agent identifier
-            color: Color for visualization
-            planning_horizon: Number of steps to look ahead
-            optimization_steps: Number of iterations for optimization
         """
         super().__init__(dynamics, initial_state, name, color)
         
@@ -50,8 +40,12 @@ class HumanAgent(Agent):
             
         self.internal_state = internal_state
         
-        # Set reward function (default to standard human reward)
-        self.reward = reward if reward is not None else HumanReward()
+        # Set reward function based on internal state if not provided
+        if reward is None:
+            from rewards import create_parameterized_human_reward
+            reward = create_parameterized_human_reward(self.internal_state)
+        
+        self.reward = reward
         
         # Planning parameters
         self.planning_horizon = planning_horizon
@@ -198,7 +192,7 @@ class HumanAgent(Agent):
 if __name__ == "__main__":
     # Test the HumanAgent class
     from dynamics import CarDynamics
-    from rewards import create_attentive_reward, create_distracted_reward
+    from rewards import *
     
     # Create dynamics model
     dynamics = CarDynamics(dt=0.1)
@@ -207,22 +201,13 @@ if __name__ == "__main__":
     initial_state = torch.tensor([0.0, 0.0, 0.0, 0.5])
     
     # Create agents with different internal states
-    attentive_agent = HumanAgent(
+    human_agent = HumanAgent(
         dynamics, 
         initial_state.clone(),
         internal_state=torch.tensor([0.9, 0.5]),  # High attentiveness
-        reward=create_attentive_reward(),
+        reward=create_parameterized_human_reward(internal_state=torch.tensor([0.5, 0.5])),
         name="attentive_human",
         color="green"
-    )
-    
-    distracted_agent = HumanAgent(
-        dynamics, 
-        initial_state.clone(),
-        internal_state=torch.tensor([0.2, 0.5]),  # Low attentiveness
-        reward=create_distracted_reward(),
-        name="distracted_human",
-        color="orange"
     )
     
     # Create environment state with a robot nearby
@@ -232,18 +217,14 @@ if __name__ == "__main__":
     }
     
     # Compute controls for both agents
-    attentive_action = attentive_agent.compute_control(0, initial_state, env_state)
-    distracted_action = distracted_agent.compute_control(0, initial_state, env_state)
+    human_action = human_agent.compute_control(0, initial_state, env_state)
     
-    print(f"Attentive human action: {attentive_action}")
-    print(f"Distracted human action: {distracted_action}")
+    print(f"Human action: {human_action}")
     
-    # Simulate one step for both agents
-    attentive_agent.step(attentive_action)
-    distracted_agent.step(distracted_action)
+    # Simulate one step for the human agent
+    human_agent.step(human_action)
     
-    print(f"Attentive human state after step: {attentive_agent.state}")
-    print(f"Distracted human state after step: {distracted_agent.state}")
+    print(f"Human state after step: {human_agent.state}")
     
     # Test observation likelihood
     test_state = torch.tensor([0.0, 0.0, 0.0, 0.5])
@@ -251,14 +232,14 @@ if __name__ == "__main__":
     test_robot_action = torch.tensor([0.0, 0.0])
     
     # Compute likelihood for different internal states
-    attentive_likelihood = attentive_agent.get_observation_likelihood(
+    attentive_likelihood = human_agent.get_observation_likelihood(
         test_state, test_action, test_robot_action, 
-        torch.tensor([0.9, 0.5])
+        torch.tensor([0.9, 0.5])  # Attentive internal state
     )
     
-    distracted_likelihood = attentive_agent.get_observation_likelihood(
+    distracted_likelihood = human_agent.get_observation_likelihood(
         test_state, test_action, test_robot_action, 
-        torch.tensor([0.2, 0.5])
+        torch.tensor([0.2, 0.5])  # Distracted internal state
     )
     
     print(f"Likelihood for attentive internal state: {attentive_likelihood.item()}")
