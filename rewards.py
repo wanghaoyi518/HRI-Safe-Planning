@@ -418,7 +418,7 @@ if __name__ == "__main__":
     u = torch.tensor([0.1, 0.5])            # [steering, acceleration]
     
     # Test human reward
-    human_reward = create_normal_reward()
+    human_reward = create_parameterized_human_reward(internal_state=torch.tensor([0.5, 0.5]))
     reward_value = human_reward(0, x, u)
     print(f"Normal human reward: {reward_value.item()}")
     
