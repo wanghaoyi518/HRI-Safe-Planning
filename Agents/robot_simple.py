@@ -21,8 +21,8 @@ class RobotSimple(Agent):
                  reward: Reward = None,
                  name: str = "robot",
                  color: str = "yellow",
-                 planning_horizon: int = 5,
-                 optimization_steps: int = 20,
+                 planning_horizon: int = 15,
+                 optimization_steps: int = 50,
                  safety_distance: float = 0.2,
                  goal_position: torch.Tensor = None):
         """

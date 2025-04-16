@@ -826,19 +826,21 @@ def create_intersection_scenario_simple(robot_direction: str = "south",
         dynamics, 
         robot_init_state,
         reward=create_robot_reward(
-            collision_weight=50.0,
+            collision_weight=100.0,
             goal_weight=10.0,
             info_gain_weight=0.0,  # Zero info gain weight - crucial difference
+
             goal_position=goal_position
         ),
         name="robot",
         color="yellow",
+        safety_distance=0.3,  # Increased safety distance
         goal_position=goal_position
     )
     
     # Create human agent (same as original)
     human_x, human_y, human_theta = directions[human_direction]
-    human_init_state = torch.tensor([human_x, human_y, human_theta, 0.0])  # Initially stopped
+    human_init_state = torch.tensor([human_x, human_y, human_theta, 0.05])  # Initially stopped
     human = HumanAgent(
         dynamics,
         human_init_state,

@@ -213,6 +213,7 @@ def main():
     visualize_samples(dataset, num_samples=None)
     print("Visualization complete. Images saved to visualizations/ directory.")
     
+    
     # Show a summary of the dataset
     scenario_counts = {}
     attentiveness_values = []
