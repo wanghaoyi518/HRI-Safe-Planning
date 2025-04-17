@@ -16,6 +16,62 @@ class DataGenerator:
         """Initialize with car dynamics model."""
         self.dynamics = dynamics
 
+# def generate_dataset(self, num_episodes_per_config=5, output_dir="data"):
+    #     """
+    #     Generate dataset by running simulations with different human models.
+        
+    #     Args:
+    #         num_episodes_per_config: Number of episodes to run per configuration
+    #         output_dir: Directory to save data
+            
+    #     Returns:
+    #         List of trajectories with ground truth internal states
+    #     """
+    #     os.makedirs(output_dir, exist_ok=True)
+    #     dataset = []
+        
+    #     # Create grid of internal states to sample from
+    #     attention_values = [0.2, 0.5, 0.8]  # Distracted to Attentive
+    #     style_values = [0.2, 0.5, 0.8]      # Conservative to Aggressive
+        
+    #     # Run scenarios for different internal states
+    #     for att in attention_values:
+    #         for style in style_values:
+    #             scenario_type = 'intersection'
+                
+    #             # Use the simple scenario creation function instead
+    #             env, robot, human = create_intersection_scenario_simple()
+                
+    #             # Set human internal state
+    #             human.internal_state = torch.tensor([att, style], dtype=torch.float32)
+                
+    #             # Set appropriate reward
+    #             human.reward = create_parameterized_human_reward(internal_state=human.internal_state)
+                
+    #             # Run multiple episodes
+    #             for ep in range(num_episodes_per_config):
+    #                 print(f"Running {scenario_type} scenario with att={att:.1f}, style={style:.1f}, ep={ep+1}/{num_episodes_per_config}")
+    #                 trajectory = self._run_episode(env, robot, human)
+                    
+    #                 # Add metadata
+    #                 trajectory['internal_state'] = human.internal_state.clone()
+    #                 trajectory['scenario_type'] = scenario_type
+    #                 trajectory['episode'] = ep
+                    
+    #                 dataset.append(trajectory)
+                    
+    #                 # Reset environment
+    #                 env.reset()
+        
+    #     # Save the dataset
+    #     filename = os.path.join(output_dir, "irl_dataset.pkl")
+    #     with open(filename, 'wb') as f:
+    #         pickle.dump(dataset, f)
+        
+    #     print(f"Dataset saved to {filename} with {len(dataset)} trajectories")
+    #     return dataset
+    # In DataGenerator class, modify generate_dataset method
+
     # def generate_dataset(self, num_episodes_per_config=5, output_dir="data"):
     #     """
     #     Generate dataset by running simulations with different human models.
@@ -87,10 +143,11 @@ class DataGenerator:
         os.makedirs(output_dir, exist_ok=True)
         dataset = []
         
-        # Create grid of internal states to sample from
-        attention_values = [0.2, 0.5, 0.8]  # Distracted to Attentive
-        style_values = [0.2, 0.5, 0.8]      # Conservative to Aggressive
-        
+        # Create fine-grained sampling of internal states from 0.2 to 0.8
+        # attention_values = [round(0.2 + i * 0.01, 2) for i in range(61)]  # 0.2 to 0.8 in 0.01 increments
+        # style_values = [round(0.2 + i * 0.01, 2) for i in range(61)]      # 0.2 to 0.8 in 0.01 increments
+        attention_values = [0.21, 0.51, 0.79]  # Distracted to Attentive
+        style_values = [0.21, 0.51, 0.79]      # Conservative to Aggressive
         # Run scenarios for different internal states
         for att in attention_values:
             for style in style_values:
@@ -119,7 +176,7 @@ class DataGenerator:
                 max_retries = 3
                 ep = 0
                 while ep < num_episodes_per_config:
-                    print(f"Running {scenario_type} scenario with att={att:.1f}, style={style:.1f}, ep={ep+1}/{num_episodes_per_config}")
+                    print(f"Running {scenario_type} scenario with att={att:.2f}, style={style:.2f}, ep={ep+1}/{num_episodes_per_config}")
                     trajectory = self._run_episode(env, robot, human)
                     
                     # Check for collisions
@@ -162,7 +219,7 @@ class DataGenerator:
         
         print(f"Dataset saved to {filename} with {len(dataset)} trajectories")
         return dataset
-    
+
     # def _run_episode(self, env, robot, human, max_steps=20):
     #     """Run a single episode and collect trajectory data."""
     #     trajectory = {

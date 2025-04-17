@@ -150,51 +150,32 @@ def visualize_trajectory(trajectory: Dict, index: int):
 
 def visualize_samples(dataset, num_samples=None):
     """Visualize trajectories representing each unique internal state combination."""
-    # Group trajectories by internal state
-    state_groups = {}
-    for i, traj in enumerate(dataset):
-        # Extract internal state values (round to 1 decimal place for better grouping)
-        att, style = traj['internal_state'].numpy()
-        att_key = round(att, 1)
-        style_key = round(style, 1)
-        key = (att_key, style_key)
-        
-        if key not in state_groups:
-            state_groups[key] = []
-        state_groups[key].append((i, traj))
-    
-    # If num_samples is None, show all unique combinations
-    if num_samples is None:
-        selected_groups = state_groups
-    # Otherwise limit the total number of samples if necessary
-    elif num_samples < len(state_groups):
-        print(f"Warning: {len(state_groups)} unique internal states found, but only showing {num_samples}")
-        # Sort keys and take a representative sample
-        keys = sorted(state_groups.keys())
-        keys = keys[:num_samples]
-        selected_groups = {k: state_groups[k] for k in keys}
-    else:
-        selected_groups = state_groups
-    
     # Create output directory if it doesn't exist
     os.makedirs("visualizations", exist_ok=True)
     
-    # Visualize one trajectory from each group
-    for (att, style), trajectories in selected_groups.items():
-        # Take the first trajectory from this group
-        idx, sample = trajectories[0]
+    # If num_samples is None, visualize all trajectories
+    if num_samples is None:
+        trajectories_to_visualize = dataset
+    # Otherwise limit to the specified number of samples
+    else:
+        trajectories_to_visualize = dataset[:num_samples]
+    
+    # Visualize each trajectory
+    for idx, sample in enumerate(trajectories_to_visualize):
+        # Get the exact internal state values
+        att, style = sample['internal_state'].numpy()
         
         # Create visualization
         fig = visualize_trajectory(sample, idx)
         
-        # Save the figure with descriptive filename
-        filename = f"visualizations/att_{att:.1f}_style_{style:.1f}_{sample['scenario_type']}.png"
+        # Save the figure with descriptive filename using exact values
+        filename = f"visualizations/att_{att:.2f}_style_{style:.2f}_{sample['scenario_type']}.png"
         fig.savefig(filename)
         plt.close(fig)
         
         print(f"Saved trajectory visualization to {filename}")
     
-    print(f"Visualized {len(selected_groups)} trajectories representing different internal states")
+    print(f"Visualized {len(trajectories_to_visualize)} trajectories")
 
 def main():
     """Main function to load and visualize dataset."""
