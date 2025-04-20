@@ -555,7 +555,7 @@ def create_parameterized_human_reward(internal_state: torch.Tensor) -> HumanRewa
         
         # Default case - use a formula-based approach for any other values
     else:
-        print(f"formula-based with attentiveness: {attentiveness:.2f}, driving style: {driving_style:.2f}")
+        # print(f"formula-based with attentiveness: {attentiveness:.2f}, driving style: {driving_style:.2f}")
         # Calculate target speed based on driving style (aggressive = faster)
         # Expanded range from 0.5 (most conservative) to 2.0 (most aggressive)
         target_speed = 0.5 + 1.5 * driving_style

@@ -144,10 +144,10 @@ class DataGenerator:
         dataset = []
         
         # Create fine-grained sampling of internal states from 0.2 to 0.8
-        # attention_values = [round(0.2 + i * 0.01, 2) for i in range(61)]  # 0.2 to 0.8 in 0.01 increments
-        # style_values = [round(0.2 + i * 0.01, 2) for i in range(61)]      # 0.2 to 0.8 in 0.01 increments
-        attention_values = [0.21, 0.51, 0.79]  # Distracted to Attentive
-        style_values = [0.21, 0.51, 0.79]      # Conservative to Aggressive
+        attention_values = [round(0.2 + i * 0.01, 2) for i in range(61)]  # 0.2 to 0.8 in 0.01 increments
+        style_values = [round(0.2 + i * 0.01, 2) for i in range(61)]      # 0.2 to 0.8 in 0.01 increments
+        # attention_values = [0.21, 0.51, 0.79]  # Distracted to Attentive
+        # style_values = [0.21, 0.51, 0.79]      # Conservative to Aggressive
         # Run scenarios for different internal states
         for att in attention_values:
             for style in style_values:
