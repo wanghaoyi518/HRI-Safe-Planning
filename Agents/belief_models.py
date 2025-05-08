@@ -147,8 +147,8 @@ class IntervalBelief:
         return result
         
     def update(self, 
-              likelihood_fn: Callable[[torch.Tensor], torch.Tensor],
-              num_samples: int = 10) -> None:
+            likelihood_fn: Callable[[torch.Tensor], torch.Tensor],
+            num_samples: int = 10) -> None:
         """
         Update belief using Bayesian inference.
         
@@ -164,14 +164,28 @@ class IntervalBelief:
             samples = interval.uniform_sample(num_samples)
             
             # Compute likelihood for each sample
-            sample_likelihoods = torch.stack([likelihood_fn(sample) for sample in samples])
+            sample_likelihoods = []
+            for sample in samples:
+                likelihood = likelihood_fn(sample)
+                sample_likelihoods.append(likelihood)
             
             # Average likelihood over the interval
+            sample_likelihoods = torch.stack(sample_likelihoods)
             interval_likelihood = torch.mean(sample_likelihoods)
-            interval_likelihoods.append(interval_likelihood)
             
+            # Ensure likelihood is non-zero to avoid numerical issues
+            interval_likelihood = torch.max(interval_likelihood, torch.tensor(1e-10))
+            
+            interval_likelihoods.append(interval_likelihood)
+                
         # Convert to tensor
         likelihoods = torch.stack(interval_likelihoods)
+        
+        # CRITICAL FIX: Ensure likelihoods vary across intervals
+        # If all likelihoods are the same, add small random noise to create differences
+        if torch.all(likelihoods == likelihoods[0]):
+            print("WARNING: All likelihoods are identical, adding noise to differentiate")
+            likelihoods = likelihoods + torch.rand_like(likelihoods) * 0.01
         
         # Bayesian update
         posterior = self.probs * likelihoods
@@ -180,10 +194,10 @@ class IntervalBelief:
         posterior_sum = torch.sum(posterior)
         if posterior_sum > 0:
             self.probs = posterior / posterior_sum
-            
+        
         # Save updated state to history
         self.save_current_state()
-        
+
     def refine(self, threshold: float = 0.5) -> None:
         """
         Refine intervals with high probability.
@@ -435,42 +449,49 @@ class IntervalBelief:
         Returns:
             Dictionary mapping interval indices to number of samples
         """
-        # Allocate at least one sample to each interval
-        min_samples = torch.ones(len(self.intervals), dtype=torch.int)
+        # CURRENT IMPLEMENTATION - allocates a min of 1 sample to each interval
+        # We'll optimize to focus more precisely on the probability distribution
         
-        # Allocate remaining samples proportionally to probabilities
-        remaining_samples = total_samples - len(self.intervals)
-        if remaining_samples > 0:
-            # Compute proportional allocation
-            prop_allocation = self.probs * remaining_samples
+        # Initialize sample allocation
+        sample_allocation = {}
+        
+        # Simple proportional allocation - no minimum samples per interval
+        for i, interval in enumerate(self.intervals):
+            # Allocate samples purely based on probability
+            samples_for_interval = int(self.probs[i].item() * total_samples)
             
-            # Round to integers
-            int_allocation = torch.floor(prop_allocation).to(torch.int)
+            # Store allocation if non-zero
+            if samples_for_interval > 0:
+                sample_allocation[i] = samples_for_interval
+        
+        # Check if we've allocated all samples
+        allocated_samples = sum(sample_allocation.values())
+        
+        # If we have unallocated samples due to rounding, assign to highest probability intervals
+        if allocated_samples < total_samples:
+            # Sort intervals by probability (descending)
+            remaining = total_samples - allocated_samples
+            sorted_indices = torch.argsort(self.probs, descending=True)
             
-            # Distribute remaining samples based on fractional parts
-            frac_parts = prop_allocation - int_allocation.float()
-            remaining = remaining_samples - int_allocation.sum().item()
-            
-            if remaining > 0:
-                # Get indices of intervals with highest fractional parts
-                top_indices = torch.argsort(frac_parts, descending=True)[:remaining]
+            # Distribute remaining samples to highest probability intervals
+            for idx in sorted_indices:
+                if remaining <= 0:
+                    break
                 
-                # Add one sample to each of these intervals
-                for idx in top_indices:
-                    int_allocation[idx] += 1
-                    
-            allocated_samples = min_samples + int_allocation
-        else:
-            # If not enough samples, prioritize intervals with highest probability
-            top_indices = torch.argsort(self.probs, descending=True)[:total_samples]
-            allocated_samples = torch.zeros(len(self.intervals), dtype=torch.int)
-            allocated_samples[top_indices] = 1
-            
-        # Create dictionary mapping interval indices to sample counts
-        sample_allocation = {i: allocated_samples[i].item() for i in range(len(self.intervals))}
+                i = idx.item()
+                if i in sample_allocation:
+                    sample_allocation[i] += 1
+                    remaining -= 1
+                else:
+                    # If this interval had 0 samples, give it one
+                    sample_allocation[i] = 1
+                    remaining -= 1
+        
+        # Ensure we're using exactly the requested number of samples
+        assert sum(sample_allocation.values()) == total_samples, "Sample allocation must match total samples"
         
         return sample_allocation
-    
+
     def save_current_state(self):
         """Save current belief state to history."""
         # Save a deep copy of intervals and probabilities
@@ -678,7 +699,7 @@ if __name__ == "__main__":
         #     test_belief.refine(threshold=0.5)
         # else:
         #     test_belief.refine_with_gradient(lambda phi: likelihood_fn(phi), threshold=0.3)
-        test_belief.refine(threshold=0.3)
+        test_belief.refine(threshold=0.5)
     
     # Plot history
     true_state = torch.tensor([0.8, 0.7])

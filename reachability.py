@@ -146,18 +146,28 @@ class SamplingBasedReachabilityAnalysis:
         Returns:
             List of reachable sets for each time step
         """
-        # Allocate samples based on belief
+        # Log some diagnostic information
+        #print(f"Computing reachable sets with {len(belief.intervals)} intervals and {total_samples} total samples")
+        
+        # Allocate samples based on belief - this is the key function we modified
         sample_allocation = belief.sample_proportionally(total_samples)
+        
+        # Log how samples are allocated
+        #print(f"Sample allocation: {sample_allocation}")
         
         # Initialize empty reachable sets for each time step
         all_states = [[] for _ in range(time_horizon + 1)]
         
-        # Perform reachability analysis for each interval
+        # Perform reachability analysis for each interval with samples allocated
         for interval_idx, num_samples in sample_allocation.items():
+            # Skip intervals with no samples
             if num_samples <= 0:
                 continue
                 
             interval = belief.intervals[interval_idx]
+            
+            # Log which interval we're processing and how many samples
+            # Print(f"Processing interval {interval} with {num_samples} samples")
             
             # Compute reachable sets for this interval
             interval_reachable_sets = self.compute_reachable_sets(
@@ -187,7 +197,7 @@ class SamplingBasedReachabilityAnalysis:
                 combined_reachable_sets.append(placeholder)
         
         return combined_reachable_sets
-    
+
     def compute_convex_hull(self, states: torch.Tensor) -> np.ndarray:
         """
         Compute convex hull of a set of states.
@@ -660,7 +670,7 @@ if __name__ == "__main__":
     # Update and refine belief multiple times to create a more specific distribution
     for _ in range(3):
         belief.update(test_likelihood)
-        belief.refine(threshold=0.3)
+        belief.refine(threshold=0.5)
     
     # Create robot control sequence for testing - use varied controls to generate diverse reachable sets
     robot_controls = torch.tensor([

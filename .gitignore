@@ -12,7 +12,7 @@ data/
 
 # Generated images/visualizations
 *.png
-visualizations/
+*.jpg
 
 # Distribution / packaging
 dist/
@@ -43,3 +43,18 @@ Thumbs.db
 # Ignore specific Python files
 irl_full.py
 irl.py
+
+# Ignore specific types of files
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+
+*.txt
+
+# Ignore Folders
+data/
+experiment_results/
+validation_results/
+visualizations/
+

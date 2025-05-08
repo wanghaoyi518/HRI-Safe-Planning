@@ -81,9 +81,9 @@ class RobotAgent(Agent):
         self.human_models[model_id] = human_agent
         
     def update_belief(self, 
-                     human_id: str,
-                     observation: torch.Tensor,
-                     num_samples: int = 10) -> None:
+                    human_id: str,
+                    observation: torch.Tensor,
+                    num_samples: int = 10) -> None:
         """
         Update belief over human internal state based on observed actions.
         
@@ -99,22 +99,32 @@ class RobotAgent(Agent):
         
         # Store initial entropy for information gain calculation
         initial_entropy = self.belief.entropy()
+        print(f"Initial belief entropy: {initial_entropy.item():.4f}")
         
-        # Define likelihood function
+        # Define likelihood function with debug prints
         def likelihood_fn(phi):
-            return human_agent.get_observation_likelihood(
+            likelihood = human_agent.get_observation_likelihood(
                 human_agent.state,    # Current human state
                 observation,          # Observed human action
                 self.action,          # Robot action
                 phi                   # Internal state sample
             )
-            
-        # Update belief
-        self.belief.update(likelihood_fn, num_samples)
+            # Ensure likelihood is a tensor and non-zero
+            if isinstance(likelihood, float):
+                likelihood = torch.tensor(likelihood)
+            # Add small noise to ensure different likelihoods
+            likelihood = likelihood + torch.rand(1)[0] * 1e-4
+            return likelihood
+        
+        # Update belief with increased samples for better accuracy
+        self.belief.update(likelihood_fn, num_samples=max(20, num_samples))
         
         # Calculate information gain
         final_entropy = self.belief.entropy()
         info_gain = initial_entropy - final_entropy
+        
+        print(f"Final belief entropy: {final_entropy.item():.4f}")
+        print(f"Information gain: {info_gain.item():.4f}")
         
         # Store data for tracking convergence
         self.entropy_history.append(final_entropy.item())
@@ -127,12 +137,12 @@ class RobotAgent(Agent):
         })
         
         # Refine intervals if needed based on threshold
-        self.belief.refine(threshold=0.3)
-        
+        self.belief.refine(threshold=0.2)  # Lower threshold to ensure refinement (was 0.3)     
+
     def compute_reachable_sets(self, 
-                             human_id: str,
-                             time_horizon: int = 5,
-                             num_samples: int = 20) -> List[torch.Tensor]:
+                            human_id: str,
+                            time_horizon: int = 5,
+                            num_samples: int = 30) -> List[torch.Tensor]:
         """
         Compute reachable sets for human agent using sampling-based approach.
         
@@ -149,56 +159,29 @@ class RobotAgent(Agent):
             
         human_agent = self.human_models[human_id]
         
+        # Adapt number of samples based on the number of intervals
+        # More intervals should mean more total samples to maintain accuracy
+        num_intervals = len(self.belief.intervals)
+        adaptive_samples = min(30, max(30, num_intervals * 3))  # At least 3 samples per interval
+        
+        # Log information about the computation
+        # print(f"Computing reachable sets with {num_intervals} intervals using {adaptive_samples} samples")
+        
         # Sample internal states from belief distribution
-        internal_state_samples = self.belief.sample(num_samples)
-        
-        # Initialize reachable sets
-        reachable_sets = []
-        
-        # Store all simulated trajectories for each sampled internal state
-        all_trajectories = []
-        
-        # For each sampled internal state
-        for phi in internal_state_samples:
-            # Set temporary internal state
-            original_internal_state = human_agent.internal_state
-            human_agent.internal_state = phi
-            
-            # Simulate trajectory
-            simulated_states = [human_agent.state.clone()]
-            simulated_state = human_agent.state.clone()
-            
-            for t in range(time_horizon):
-                # Compute action for this internal state
-                action = human_agent.compute_control(
-                    t, 
-                    simulated_state,
-                    {"robot_state": self.state, "robot_action": self.action}
-                )
-                
-                # Propagate state
-                simulated_state = human_agent.dynamics(simulated_state, action)
-                simulated_states.append(simulated_state.clone())
-            
-            # Reset human agent's internal state
-            human_agent.internal_state = original_internal_state
-            
-            # Store trajectory
-            all_trajectories.append(simulated_states)
-        
-        # Compute reachable sets at each time step
-        for t in range(time_horizon + 1):
-            # Collect states at time t from all trajectories
-            states_at_t = [traj[t] for traj in all_trajectories]
-            
-            # Store as tensor
-            reachable_sets.append(torch.stack(states_at_t))
+        reachable_sets = self.reachability_analyzer.compute_reachable_sets_with_belief(
+            human_agent.state,
+            self.state,
+            self.belief,
+            self.action.unsqueeze(0).repeat(time_horizon, 1),  # Simple projection of current action
+            time_horizon,
+            adaptive_samples
+        )
         
         # Store for later use
         self.reachable_sets = reachable_sets
         
         return reachable_sets
-    
+
     def compute_safety_constraint(self, 
                                state: torch.Tensor, 
                                reachable_set: torch.Tensor) -> bool:

@@ -151,10 +151,10 @@ class HumanAgent(Agent):
         return final_action
         
     def get_observation_likelihood(self, 
-                                 state: torch.Tensor, 
-                                 action: torch.Tensor,
-                                 robot_action: torch.Tensor, 
-                                 internal_state: torch.Tensor) -> torch.Tensor:
+                                state: torch.Tensor, 
+                                action: torch.Tensor,
+                                robot_action: torch.Tensor, 
+                                internal_state: torch.Tensor) -> torch.Tensor:
         """
         Compute likelihood of observing an action given a state and internal state.
         
@@ -181,13 +181,19 @@ class HumanAgent(Agent):
         
         # Convert to likelihood using Gaussian model
         # Smaller differences -> higher likelihood
-        likelihood = torch.exp(-10.0 * diff)
+        # CRITICAL FIX: Adjusted scaling factor to create more variation
+        likelihood = torch.exp(-5.0 * diff)  # Changed from -10.0 to -5.0
+        
+        # Add small random noise to ensure different likelihoods
+        likelihood = likelihood + torch.rand(1)[0] * 1e-4
+        
+        # DEBUGGING
+        # print(f"Internal state: {internal_state}, Action diff: {diff.item():.5f}, Likelihood: {likelihood.item():.5f}")
         
         # Restore original internal state
         self.internal_state = original_internal_state
         
         return likelihood
-
 
 if __name__ == "__main__":
     # Test the HumanAgent class

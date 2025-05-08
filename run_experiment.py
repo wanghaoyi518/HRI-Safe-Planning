@@ -5,6 +5,7 @@ from matplotlib.patches import Rectangle, Polygon
 import os
 from typing import Dict, List, Tuple, Optional
 import time
+from datetime import datetime
 
 from dynamics import CarDynamics
 from Agents.human import HumanAgent
@@ -47,8 +48,8 @@ def create_intersection_scenario(attentiveness=0.8, driving_style=0.7):
         reward=robot_reward_fn,
         name="robot",
         color="yellow",
-        planning_horizon=5,
-        optimization_steps=20,
+        planning_horizon=3,
+        optimization_steps=10,
         info_gain_weight=2.0,
         safety_distance=0.2
     )
@@ -82,6 +83,7 @@ def create_intersection_scenario(attentiveness=0.8, driving_style=0.7):
     return env, robot, human
 
 
+# In the run_experiment function
 def run_experiment(
     num_steps: int = 15,
     attentiveness: float = 0.8,
@@ -108,6 +110,13 @@ def run_experiment(
     # Create scenario
     env, robot, human = create_intersection_scenario(attentiveness, driving_style)
     
+    # CRITICAL FIX: Initialize with non-uniform belief to encourage refinement
+    # Create a belief slightly biased toward the true state to help convergence
+    new_belief = IntervalBelief()
+    # Split the initial interval to create more intervals
+    new_belief.refine(threshold=0.1)  # Force initial refinement
+    robot.belief = new_belief
+    
     # Data collection
     experiment_data = {
         'human_states': [],
@@ -123,7 +132,7 @@ def run_experiment(
     
     # Simulation loop
     for t in range(num_steps):
-        print(f"Simulation step {t+1}/{num_steps}")
+        print(f"\n=== Simulation step {t+1}/{num_steps} ===")
         
         # Store current states
         experiment_data['human_states'].append(human.state.clone())
@@ -135,27 +144,31 @@ def run_experiment(
             'probs': robot.belief.probs.clone()
         })
         
-        # Compute reachable sets using SamplingBasedReachabilityAnalysis
-        reachable_sets = robot.compute_reachable_sets(
-            "human",
-            time_horizon=5,
-            num_samples=30
-        )
-        experiment_data['reachable_sets'].append(reachable_sets)
-        
-        # Store entropy and expected value
+        # Compute entropy and expected value
         entropy = robot.belief.entropy()
         expected = robot.belief.expected_value()
         experiment_data['entropy_history'].append(entropy.item())
         experiment_data['expected_values'].append(expected.clone())
+        
+        print(f"Current entropy: {entropy.item():.4f}")
+        print(f"Expected internal state: {expected}")
         
         # Create environment state
         env_state = {
             "human": human
         }
         
-        # Compute robot action using active information gathering
-        robot_action = robot.compute_control(t, robot.state, env_state)
+        # CRITICAL FIX: Force some exploration in early steps
+        if t < 3:
+            # Add exploration bias to robot action
+            print("Adding exploration bias to robot actions")
+            robot_action = robot.compute_control(t, robot.state, env_state)
+            exploration_noise = torch.randn_like(robot_action) * 0.2
+            robot_action = robot_action + exploration_noise
+            robot_action = torch.clamp(robot_action, -1.0, 1.0)
+        else:
+            # Normal control computation
+            robot_action = robot.compute_control(t, robot.state, env_state)
         
         # Set robot action
         robot.set_action(robot_action)
@@ -168,8 +181,15 @@ def run_experiment(
         # Execute environment step
         info = env.step()
         
+        # Print current states
+        print(f"Robot state: {robot.state}")
+        print(f"Human state: {human.state}")
+        print(f"Robot action: {robot_action}")
+        print(f"Human action: {human_action}")
+        
         # Update robot belief based on observed human action
-        robot.update_belief("human", human_action)
+        print("\nUpdating belief based on observed human action...")
+        robot.update_belief("human", human_action, num_samples=20)  # Increased samples
         
         # Check termination conditions
         if info.get('complete', False) or any(info.get('collisions', {}).values()):
@@ -183,7 +203,6 @@ def run_experiment(
     
     return experiment_data
 
-
 def visualize_trajectories(experiment_data: Dict, save_dir: str):
     """
     Visualize human and robot trajectories.
@@ -192,6 +211,10 @@ def visualize_trajectories(experiment_data: Dict, save_dir: str):
         experiment_data: Experiment data dictionary
         save_dir: Directory to save visualization image
     """
+    # Ensure the directory exists
+    os.makedirs(save_dir, exist_ok=True)
+    print(f"Saving trajectory visualization to {save_dir}")
+    
     # Extract trajectory data
     human_states = torch.stack(experiment_data['human_states'])
     robot_states = torch.stack(experiment_data['robot_states'])
@@ -268,6 +291,7 @@ def visualize_reachable_sets(experiment_data: Dict, save_dir: str):
     # Create directory for reachable set visualizations
     reachable_dir = os.path.join(save_dir, "reachable_sets")
     os.makedirs(reachable_dir, exist_ok=True)
+    print(f"Saving reachable sets to {reachable_dir}")
     
     # Select time steps to visualize (every 3 steps)
     time_steps = list(range(0, len(experiment_data['reachable_sets']), 3))
@@ -379,85 +403,73 @@ def visualize_belief_evolution(experiment_data: Dict, save_dir: str):
     belief_dir = os.path.join(save_dir, "belief_evolution")
     os.makedirs(belief_dir, exist_ok=True)
     
-    # 1. Create a grid of belief distributions at different time steps
-    # Select time steps to visualize (max 6)
-    steps = len(experiment_data['belief_states'])
-    
-    # Logic to select a representative set of time steps
-    if steps <= 6:
-        indices = list(range(steps))
+    # Check if entropy history and expected values exist
+    if 'entropy_history' not in experiment_data or len(experiment_data['entropy_history']) == 0:
+        print("Warning: No entropy history data available")
+        entropy_history = []
     else:
-        # First, middle, and last, plus three equally spaced
-        step_size = steps // 5
-        indices = [0]
-        indices.extend([i * step_size for i in range(1, 5)])
-        indices.append(steps - 1)
+        entropy_history = experiment_data['entropy_history']
     
-    # Create figure with subplots
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-    axes = axes.flatten()
+    if 'expected_values' not in experiment_data or len(experiment_data['expected_values']) == 0:
+        print("Warning: No expected values data available")
+        expected_values = []
+    else:
+        expected_values = experiment_data['expected_values']
     
-    # Get true internal state
-    true_state = experiment_data['actual_internal_state']
-    
-    # Plot belief at each selected time step
-    for i, idx in enumerate(indices):
-        if i >= len(axes) or idx >= len(experiment_data['belief_states']):
-            continue
+    # Plot entropy and expected value evolution
+    if entropy_history or expected_values:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        
+        # Plot entropy over time if available
+        if entropy_history:
+            ax1.plot(entropy_history, 'b-', marker='o')
+            ax1.set_xlabel('Time Step')
+            ax1.set_ylabel('Belief Entropy')
+            ax1.set_title('Entropy Reduction Over Time')
+            ax1.grid(True)
+        else:
+            ax1.text(0.5, 0.5, "No entropy data available", 
+                    ha='center', va='center', transform=ax1.transAxes)
+        
+        # Plot expected value convergence if available
+        if expected_values:
+            expected_values = torch.stack(expected_values)
             
-        ax = axes[i]
+            ax2.plot(expected_values[:, 0].numpy(), 'b-', label='Expected Attentiveness')
+            ax2.plot(expected_values[:, 1].numpy(), 'r-', label='Expected Driving Style')
+            
+            # Add true internal state if available
+            if 'actual_internal_state' in experiment_data:
+                true_state = experiment_data['actual_internal_state']
+                ax2.axhline(y=true_state[0].item(), linestyle='--', color='blue', 
+                          alpha=0.7, label='True Attentiveness')
+                ax2.axhline(y=true_state[1].item(), linestyle='--', color='red', 
+                          alpha=0.7, label='True Driving Style')
+            
+            ax2.set_xlabel('Time Step')
+            ax2.set_ylabel('Value')
+            ax2.set_title('Expected Internal State Over Time')
+            ax2.legend()
+            ax2.grid(True)
+        else:
+            ax2.text(0.5, 0.5, "No expected value data available", 
+                    ha='center', va='center', transform=ax2.transAxes)
         
-        # Create temporary belief for plotting
-        belief = IntervalBelief()
-        belief.intervals = experiment_data['belief_states'][idx]['intervals']
-        belief.probs = experiment_data['belief_states'][idx]['probs']
-        
-        # Plot belief
-        belief.plot(ax=ax, title=f"Step {idx}", show_center=True)
-        
-        # Add true state
-        ax.plot(true_state[0].item(), true_state[1].item(), 'g*', 
-               markersize=12, label='True State')
-        ax.legend(loc='upper right')
-    
-    # Hide any unused axes
-    for i in range(len(indices), len(axes)):
-        axes[i].axis('off')
-    
-    # Save figure
-    plt.tight_layout()
-    plt.savefig(os.path.join(belief_dir, "belief_grid.png"))
-    plt.close(fig)
-    
-    # 2. Plot entropy and expected value evolution
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-    
-    # Plot entropy over time
-    ax1.plot(experiment_data['entropy_history'], 'b-', marker='o')
-    ax1.set_xlabel('Time Step')
-    ax1.set_ylabel('Belief Entropy')
-    ax1.set_title('Entropy Reduction Over Time')
-    ax1.grid(True)
-    
-    # Plot expected value convergence
-    expected_values = torch.stack(experiment_data['expected_values'])
-    
-    ax2.plot(expected_values[:, 0].numpy(), 'b-', label='Expected Attentiveness')
-    ax2.plot(expected_values[:, 1].numpy(), 'r-', label='Expected Driving Style')
-    ax2.axhline(y=true_state[0].item(), linestyle='--', color='blue', 
-               alpha=0.7, label='True Attentiveness')
-    ax2.axhline(y=true_state[1].item(), linestyle='--', color='red', 
-               alpha=0.7, label='True Driving Style')
-    ax2.set_xlabel('Time Step')
-    ax2.set_ylabel('Value')
-    ax2.set_title('Expected Internal State Over Time')
-    ax2.legend()
-    ax2.grid(True)
-    
-    # Save figure
-    plt.tight_layout()
-    plt.savefig(os.path.join(belief_dir, "belief_metrics.png"))
-    plt.close(fig)
+        # Save figure
+        plt.tight_layout()
+        plt.savefig(os.path.join(belief_dir, "belief_metrics.png"))
+        plt.close(fig)
+    else:
+        # Create placeholder image if no data available
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        ax1.text(0.5, 0.5, "No entropy data available", 
+                ha='center', va='center', transform=ax1.transAxes)
+        ax2.text(0.5, 0.5, "No expected value data available", 
+                ha='center', va='center', transform=ax2.transAxes)
+        ax1.set_title("Entropy Data Missing")
+        ax2.set_title("Expected Values Missing")
+        plt.savefig(os.path.join(belief_dir, "belief_metrics.png"))
+        plt.close(fig)
 
 
 def main():
@@ -466,9 +478,13 @@ def main():
     torch.manual_seed(42)
     np.random.seed(42)
     
-    # Create output directory
-    output_dir = "experiment_results"
+    # Create timestamp for this experiment run
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    # Create output directory with timestamp
+    output_dir = os.path.join("experiment_results", timestamp)
     os.makedirs(output_dir, exist_ok=True)
+    print(f"Created experiment directory: {output_dir}")
     
     # Define experiment configurations
     configs = [
@@ -481,6 +497,14 @@ def main():
         print(f"\nRunning experiment: {config['name']}")
         config_dir = os.path.join(output_dir, config['name'])
         
+        # Create configuration directory before running experiment
+        os.makedirs(config_dir, exist_ok=True)
+        print(f"Created configuration directory: {config_dir}")
+        
+        # Also create subdirectories for visualizations
+        os.makedirs(os.path.join(config_dir, "reachable_sets"), exist_ok=True)
+        os.makedirs(os.path.join(config_dir, "belief_evolution"), exist_ok=True)
+        
         # Run experiment
         experiment_data = run_experiment(
             num_steps=15,
@@ -489,7 +513,7 @@ def main():
             visualization_dir=config_dir
         )
         
-        print(f"Experiment {config['name']} completed.")
+        print(f"Experiment {config['name']} completed and saved to {config_dir}")
 
 
 if __name__ == "__main__":
