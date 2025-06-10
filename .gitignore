@@ -49,3 +49,17 @@ irl.py
 *.md
 
 *.pdf
+
+# Ignore specific types of files
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+
+*.txt
+
+# Ignore Folders
+data/
+experiment_results/
+validation_results/
+visualizations/
