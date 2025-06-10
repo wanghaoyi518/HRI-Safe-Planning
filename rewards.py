@@ -273,97 +273,144 @@ class RobotReward(Reward):
             
         return reward
 
+class BinaryHumanReward(Reward):
+    """
+    Human reward function for binary internal state (distracted/attentive).
+    Provides two fixed reward configurations.
+    """
+    
+    def __init__(self, is_attentive: bool):
+        """
+        Initialize binary human reward.
+        
+        Args:
+            is_attentive: True for attentive driver, False for distracted driver
+        """
+        self.is_attentive = is_attentive
+        
+        # Define features based on internal state
+        if is_attentive:
+            # Attentive driver parameters - EXTREME distinction
+            features = [
+                # Perfect speed control
+                (speed_preference_feature(target_speed=10.0), 100.0),
+                # Perfect lane following
+                (lane_following_feature(0.0), 200.0),
+                # Extremely smooth controls
+                (control_smoothness_feature(), 500.0),
+                # Maximum boundary awareness
+                (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 1000.0),
+                # Very strong goal-directed behavior
+                (create_goal_reaching_feature(torch.tensor([-2.0, 0.0]), weight=100.0), 50.0)
+            ]
+            
+            # Additional attentive behavior features
+            def safe_following_distance(t, x, u):
+                """Maintain safe following distance"""
+                # This is a placeholder - in practice would check distance to other vehicles
+                return torch.tensor(0.0)
+            
+            def smooth_trajectory(t, x, u):
+                """Prefer smooth trajectories"""
+                return -0.5 * torch.sum(u**2)
+            
+            features.extend([
+                (Feature(safe_following_distance), 100.0),
+                (Feature(smooth_trajectory), 100.0)
+            ])
+            
+            name = "attentive_human"
+            
+        else:
+            # Distracted driver parameters - EXTREME distinction
+            features = [
+                # Chaotic speed control
+                (speed_preference_feature(target_speed=0.3), 1.0),
+                # No lane following
+                (lane_following_feature(0.0), 0.01),
+                # Chaotic controls
+                (control_smoothness_feature(), 0.1),
+                # Almost no boundary awareness
+                (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), 1.0),
+                # Minimal goal-directed behavior
+                (create_goal_reaching_feature(torch.tensor([-2.0, 0.0]), weight=1.0), 0.5)
+            ]
+            
+            # Additional distracted behavior features
+            def random_drift(t, x, u):
+                """Random lateral drift due to distraction"""
+                # Use time as seed for consistency
+                torch.manual_seed(int(t * 10) % 1000)
+                return torch.randn(1).item() * 0.5
+            
+            def delayed_reaction(t, x, u):
+                """Delayed reactions to stimuli"""
+                # Penalize sudden control changes (distracted drivers react late)
+                return -2.0 * torch.abs(u[0])  # Penalize steering
+            
+            def inconsistent_speed(t, x, u):
+                """Inconsistent speed maintenance"""
+                torch.manual_seed(int(t * 7 + x[0].item() * 100) % 1000)
+                speed_variation = torch.randn(1).item() * 0.3
+                return speed_variation
+            
+            features.extend([
+                (Feature(random_drift), 50.0),
+                (Feature(delayed_reaction), 30.0),
+                (Feature(inconsistent_speed), 20.0)
+            ])
+            
+            name = "distracted_human"
+        
+        super().__init__(features=features, name=name)
+        
+    def __call__(self, t: int, x: torch.Tensor, u: torch.Tensor, phi: torch.Tensor = None) -> torch.Tensor:
+        """
+        Compute reward (no parameterization needed for binary case).
+        
+        Args:
+            t: Time step
+            x: State vector
+            u: Control vector
+            phi: Internal state parameter (ignored for binary case)
+            
+        Returns:
+            Total reward
+        """
+        # Simply use parent class computation (ignore phi since behavior is fixed)
+        return super().__call__(t, x, u)
 
 
-# def create_parameterized_human_reward(internal_state: torch.Tensor) -> HumanReward:
-#     """
-#     Create a human reward function parameterized by internal state.
+def create_binary_human_reward(is_attentive: bool) -> BinaryHumanReward:
+    """
+    Create a binary human reward function.
     
-#     Args:
-#         internal_state: Human internal state [attentiveness, driving_style]
+    Args:
+        is_attentive: True for attentive driver, False for distracted driver
         
-#     Returns:
-#         Personalized HumanReward based on internal state
-#     """
-#     # Extract attentiveness and driving style
-#     attentiveness = internal_state[0].item()
-#     driving_style = internal_state[1].item()
+    Returns:
+        BinaryHumanReward instance
+    """
+    return BinaryHumanReward(is_attentive)
+
+
+def create_binary_human_reward_from_state(internal_state: Union[int, float, torch.Tensor]) -> BinaryHumanReward:
+    """
+    Create a binary human reward function from internal state value.
     
-#     # Set human goal
-#     human_goal = torch.tensor([-2.0, 0.0])
-    
-#     # Create base reward
-#     reward = HumanReward()
-    
-#     # Calculate target speed based on driving style (aggressive = faster)
-#     # Range from 0.6 (most conservative) to 1.8 (most aggressive)
-#     target_speed = 0.6 + 1.2 * driving_style
-    
-#     # Calculate speed weight - aggressive drivers prioritize speed more
-#     # Range from 7.0 to 17.0
-#     speed_weight = 7.0 + 10.0 * driving_style
-    
-#     # Calculate lane following weight - attentive drivers follow lanes better
-#     # Range from 0.5 to 4.5
-#     lane_weight = 0.5 + 4.0 * attentiveness
-    
-#     # Calculate control smoothness weight - conservative drivers have smoother controls
-#     # Range from 2.0 to 8.0 with inverse relationship to driving style
-#     control_weight = 8.0 - 6.0 * driving_style
-    
-#     # Calculate boundary awareness - highly affected by both attentiveness and driving style
-#     # Range from 20.0 to 80.0
-#     boundary_weight = 20.0 + 60.0 * attentiveness * (1.0 - 0.5 * driving_style)
-    
-#     # Calculate goal weight - attentive and aggressive drivers are more goal-focused
-#     # Range from 3.0 to 15.0
-#     goal_weight = 2*(3.0 + 6.0 * attentiveness + 6.0 * driving_style)
-    
-#     # Create the parameterized feature set with calculated weights
-#     reward.base_features = [
-#         (speed_preference_feature(target_speed=target_speed), speed_weight),
-#         (lane_following_feature(0.0), lane_weight),
-#         (control_smoothness_feature(), control_weight),
-#         (road_boundary_feature([[1, 0, 1], [-1, 0, 1]]), boundary_weight),
-#         (create_goal_reaching_feature(human_goal, weight=goal_weight), 1.0)
-#     ]
-    
-#     # Add special behaviors for extreme internal states
-    
-#     # Very distracted behavior (att <= 0.2)
-#     if attentiveness <= 0.2:
-#         # Add random decision feature to simulate unpredictable behavior
-#         def random_decision(t, x, u):
-#             # Seed based on time and position for consistency
-#             seed = int(t * 10 + x[0].item() * 100) % 1000
-#             torch.manual_seed(seed)
-#             return torch.randn(1).item()
+    Args:
+        internal_state: Binary internal state (0 for distracted, 1 for attentive)
         
-#         distraction_feature = Feature(random_decision)
-#         reward.base_features.append((distraction_feature, 3.0))
+    Returns:
+        BinaryHumanReward instance
+    """
+    if isinstance(internal_state, torch.Tensor):
+        internal_state = internal_state.item()
     
-#     # Very aggressive behavior (style > 0.9)
-#     if driving_style >= 0.8:
-#         # Add impatience feature - penalty proportional to time spent in same position
-#         def impatience_feature(t, x, u):
-#             # Penalize low speeds more heavily as time increases
-#             return -0.1 * t * torch.abs(x[3] - target_speed)
-        
-#         reward.base_features.append((Feature(impatience_feature), 2.0))
+    # Convert to boolean (threshold at 0.5 for continuous values)
+    is_attentive = internal_state > 0.5
     
-#     # Very careful behavior (att > 0.9 and style < 0.3)
-#     if attentiveness >= 0.8 and driving_style < 0.3:
-#         # Add extra caution near boundaries
-#         boundary_buffer = 0.05
-#         def extra_caution_feature(t, x, u):
-#             # Add penalty for being close to lane edges or other boundaries
-#             pos = x[:2]
-#             dist_to_center = torch.abs(pos[0])  # Distance from lane center
-#             return -5.0 * torch.exp(-10.0 * (dist_to_center - 0.1)**2)
-        
-#         reward.base_features.append((Feature(extra_caution_feature), 5.0))
-    
-#     return reward
+    return create_binary_human_reward(is_attentive)
 
 def create_parameterized_human_reward(internal_state: torch.Tensor) -> HumanReward:
     """
@@ -713,3 +760,46 @@ if __name__ == "__main__":
     
     robot_reward_with_info = robot_reward(1, x, u, entropy_after)
     print(f"Robot reward with entropy reduction: {robot_reward_with_info.item()}")
+
+    # Test binary human rewards
+    print("\n\n=== Testing Binary Human Rewards ===")
+    
+    # Create test state and control
+    x = torch.tensor([0.0, 0.0, 0.0, 0.8])  # [x, y, theta, v]
+    u = torch.tensor([0.1, 0.3])            # [steering, acceleration]
+    
+    # Test attentive driver
+    attentive_reward = create_binary_human_reward(is_attentive=True)
+    attentive_value = attentive_reward(0, x, u)
+    print(f"Attentive driver reward: {attentive_value.item():.4f}")
+    
+    # Test distracted driver
+    distracted_reward = create_binary_human_reward(is_attentive=False)
+    distracted_value = distracted_reward(0, x, u)
+    print(f"Distracted driver reward: {distracted_value.item():.4f}")
+    
+    # Test with different states to see behavioral differences
+    print("\nTesting behavioral differences:")
+    
+    # Test lane deviation
+    x_deviated = torch.tensor([0.5, 0.0, 0.0, 0.8])  # Deviated from lane center
+    print(f"\nWith lane deviation (x=0.5):")
+    print(f"  Attentive: {attentive_reward(0, x_deviated, u).item():.4f}")
+    print(f"  Distracted: {distracted_reward(0, x_deviated, u).item():.4f}")
+    
+    # Test high speed
+    x_fast = torch.tensor([0.0, 0.0, 0.0, 1.5])  # High speed
+    print(f"\nWith high speed (v=1.5):")
+    print(f"  Attentive: {attentive_reward(0, x_fast, u).item():.4f}")
+    print(f"  Distracted: {distracted_reward(0, x_fast, u).item():.4f}")
+    
+    # Test large control input
+    u_large = torch.tensor([0.5, 0.8])  # Large steering and acceleration
+    print(f"\nWith large control inputs:")
+    print(f"  Attentive: {attentive_reward(0, x, u_large).item():.4f}")
+    print(f"  Distracted: {distracted_reward(0, x, u_large).item():.4f}")
+    
+    # Test time-dependent behavior for distracted driver
+    print("\nDistracted driver over time (showing randomness):")
+    for t in range(5):
+        print(f"  t={t}: {distracted_reward(t, x, u).item():.4f}")

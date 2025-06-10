@@ -636,6 +636,269 @@ class IntervalBelief:
         
         return fig
 
+class BinaryBelief:
+    """
+    Binary belief distribution over human internal state.
+    Represents belief over two states: distracted (0) and attentive (1).
+    """
+    
+    def __init__(self, p_attentive: float = 0.5):
+        """
+        Initialize binary belief.
+        
+        Args:
+            p_attentive: Initial probability of human being attentive (default: 0.5)
+        """
+        self.p_attentive = torch.tensor(p_attentive, dtype=torch.float32)
+        self.p_distracted = 1.0 - self.p_attentive
+        
+        # For tracking history
+        self.history = []
+        self.save_current_state()
+        
+    def __str__(self):
+        return f"BinaryBelief: P(attentive)={self.p_attentive.item():.4f}, P(distracted)={self.p_distracted.item():.4f}"
+    
+    def update(self, likelihood_attentive: float, likelihood_distracted: float):
+        """
+        Update belief using Bayesian inference.
+        
+        Args:
+            likelihood_attentive: P(observation | attentive)
+            likelihood_distracted: P(observation | distracted)
+        """
+        # Convert to tensors if needed
+        if not isinstance(likelihood_attentive, torch.Tensor):
+            likelihood_attentive = torch.tensor(likelihood_attentive, dtype=torch.float32)
+        if not isinstance(likelihood_distracted, torch.Tensor):
+            likelihood_distracted = torch.tensor(likelihood_distracted, dtype=torch.float32)
+            
+        # Bayesian update
+        posterior_attentive = self.p_attentive * likelihood_attentive
+        posterior_distracted = self.p_distracted * likelihood_distracted
+        
+        # Normalize
+        total = posterior_attentive + posterior_distracted
+        if total > 0:
+            self.p_attentive = posterior_attentive / total
+            self.p_distracted = posterior_distracted / total
+        
+        # Save state to history
+        self.save_current_state()
+    
+    def update_with_likelihood_fn(self, likelihood_fn: Callable[[torch.Tensor], torch.Tensor]):
+        """
+        Update belief using a likelihood function.
+        
+        Args:
+            likelihood_fn: Function that computes likelihood given internal state
+        """
+        # Compute likelihoods for both states
+        phi_distracted = torch.tensor([0.0], dtype=torch.float32)  # Binary: 0 for distracted
+        phi_attentive = torch.tensor([1.0], dtype=torch.float32)   # Binary: 1 for attentive
+        
+        likelihood_distracted = likelihood_fn(phi_distracted)
+        likelihood_attentive = likelihood_fn(phi_attentive)
+        
+        # Update using computed likelihoods
+        self.update(likelihood_attentive.item(), likelihood_distracted.item())
+    
+    def entropy(self) -> torch.Tensor:
+        """
+        Compute binary entropy of the belief distribution.
+        
+        Returns:
+            Binary entropy value
+        """
+        # Handle edge cases
+        if self.p_attentive <= 0 or self.p_attentive >= 1:
+            return torch.tensor(0.0, dtype=torch.float32)
+        
+        # Binary entropy: -p*log(p) - (1-p)*log(1-p)
+        return -(self.p_attentive * torch.log(self.p_attentive) + 
+                self.p_distracted * torch.log(self.p_distracted))
+    
+    def sample(self, n: int = 1) -> torch.Tensor:
+        """
+        Sample internal states from the belief distribution.
+        
+        Args:
+            n: Number of samples
+            
+        Returns:
+            Tensor of shape [n] with sampled internal states (0 or 1)
+        """
+        # Sample from Bernoulli distribution
+        samples = torch.bernoulli(self.p_attentive.repeat(n))
+        return samples
+    
+    def get_probabilities(self) -> Tuple[float, float]:
+        """
+        Get the current probabilities.
+        
+        Returns:
+            Tuple of (p_distracted, p_attentive)
+        """
+        return (self.p_distracted.item(), self.p_attentive.item())
+    
+    def get_most_likely_state(self) -> int:
+        """
+        Get the most likely internal state.
+        
+        Returns:
+            0 if distracted is more likely, 1 if attentive is more likely
+        """
+        return 1 if self.p_attentive > 0.5 else 0
+    
+    def save_current_state(self):
+        """Save current belief state to history."""
+        current_state = {
+            'p_attentive': self.p_attentive.clone(),
+            'p_distracted': self.p_distracted.clone()
+        }
+        self.history.append(current_state)
+    
+    def plot(self, ax=None, title=None):
+        """
+        Plot the binary belief distribution as a bar chart.
+        
+        Args:
+            ax: Matplotlib axis (creates new figure if None)
+            title: Title for the plot
+            
+        Returns:
+            Matplotlib axis
+        """
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 6))
+        
+        # Create bar chart
+        states = ['Distracted', 'Attentive']
+        probabilities = [self.p_distracted.item(), self.p_attentive.item()]
+        colors = ['red', 'green']
+        
+        bars = ax.bar(states, probabilities, color=colors, alpha=0.7)
+        
+        # Add value labels on bars
+        for bar, prob in zip(bars, probabilities):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{prob:.3f}', ha='center', va='bottom', fontsize=12)
+        
+        # Set axis properties
+        ax.set_ylim(0, 1.0)
+        ax.set_ylabel('Probability')
+        ax.set_xlabel('Human Internal State')
+        
+        if title:
+            ax.set_title(title)
+        else:
+            ax.set_title('Binary Belief Distribution')
+        
+        # Add entropy information
+        entropy_val = self.entropy().item()
+        ax.text(0.5, 0.95, f'Entropy: {entropy_val:.3f}', 
+               transform=ax.transAxes, ha='center', va='top',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        # Add grid
+        ax.grid(True, axis='y', linestyle='--', alpha=0.5)
+        
+        return ax
+    
+    def plot_history(self, ax=None, true_state=None):
+        """
+        Plot the history of belief updates.
+        
+        Args:
+            ax: Matplotlib axis (creates new figure if None)
+            true_state: True human internal state (0 or 1, optional)
+            
+        Returns:
+            Matplotlib axis
+        """
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(10, 6))
+        
+        if not self.history:
+            ax.text(0.5, 0.5, "No history data available",
+                   ha='center', va='center', transform=ax.transAxes)
+            return ax
+        
+        # Extract probabilities from history
+        time_steps = list(range(len(self.history)))
+        p_attentive_history = [state['p_attentive'].item() for state in self.history]
+        p_distracted_history = [state['p_distracted'].item() for state in self.history]
+        
+        # Plot probabilities over time
+        ax.plot(time_steps, p_attentive_history, 'g-', linewidth=2, label='P(Attentive)')
+        ax.plot(time_steps, p_distracted_history, 'r-', linewidth=2, label='P(Distracted)')
+        
+        # Add true state if provided
+        if true_state is not None:
+            true_prob = 1.0 if true_state == 1 else 0.0
+            ax.axhline(y=true_prob, color='black', linestyle='--', alpha=0.7,
+                      label=f'True State: {"Attentive" if true_state == 1 else "Distracted"}')
+        
+        # Set axis properties
+        ax.set_xlim(0, len(time_steps) - 1)
+        ax.set_ylim(0, 1.0)
+        ax.set_xlabel('Time Step')
+        ax.set_ylabel('Probability')
+        ax.set_title('Binary Belief Evolution Over Time')
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.5)
+        
+        return ax
+    
+    def plot_entropy_history(self, ax=None):
+        """
+        Plot the history of entropy values.
+        
+        Args:
+            ax: Matplotlib axis (creates new figure if None)
+            
+        Returns:
+            Matplotlib axis
+        """
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(10, 6))
+        
+        if not self.history:
+            ax.text(0.5, 0.5, "No history data available",
+                   ha='center', va='center', transform=ax.transAxes)
+            return ax
+        
+        # Compute entropy for each historical state
+        entropy_history = []
+        for state in self.history:
+            p_att = state['p_attentive']
+            if p_att <= 0 or p_att >= 1:
+                entropy = 0.0
+            else:
+                p_dis = state['p_distracted']
+                entropy = -(p_att * torch.log(p_att) + p_dis * torch.log(p_dis)).item()
+            entropy_history.append(entropy)
+        
+        # Plot entropy over time
+        time_steps = list(range(len(self.history)))
+        ax.plot(time_steps, entropy_history, 'b-', linewidth=2, marker='o')
+        
+        # Add maximum entropy line
+        max_entropy = -2 * (0.5 * np.log(0.5))  # Binary entropy is maximized at p=0.5
+        ax.axhline(y=max_entropy, color='red', linestyle='--', alpha=0.5,
+                  label=f'Max Entropy: {max_entropy:.3f}')
+        
+        # Set axis properties
+        ax.set_xlim(0, len(time_steps) - 1)
+        ax.set_ylim(0, max_entropy * 1.1)
+        ax.set_xlabel('Time Step')
+        ax.set_ylabel('Entropy')
+        ax.set_title('Binary Belief Entropy Over Time')
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.5)
+        
+        return ax
 
 if __name__ == "__main__":
     # Test the belief representation
@@ -705,3 +968,57 @@ if __name__ == "__main__":
     true_state = torch.tensor([0.8, 0.7])
     history_fig = test_belief.plot_history(true_state=true_state)
     plt.savefig("belief_history.png")
+
+    # Test binary belief
+    print("\n\n=== Testing Binary Belief ===")
+    
+    # Create binary belief
+    binary_belief = BinaryBelief(p_attentive=0.5)
+    print("Initial binary belief:")
+    print(binary_belief)
+    
+    # Test update with specific likelihoods
+    binary_belief.update(likelihood_attentive=0.8, likelihood_distracted=0.2)
+    print("\nAfter observing behavior more consistent with attentive:")
+    print(binary_belief)
+    
+    # Test update with likelihood function
+    def test_likelihood_fn(phi):
+        # Higher likelihood for attentive state
+        if phi[0] > 0.5:  # Attentive
+            return torch.tensor(0.9)
+        else:  # Distracted
+            return torch.tensor(0.1)
+    
+    binary_belief.update_with_likelihood_fn(test_likelihood_fn)
+    print("\nAfter another update favoring attentive:")
+    print(binary_belief)
+    
+    # Test entropy
+    print(f"\nEntropy: {binary_belief.entropy().item():.4f}")
+    
+    # Test sampling
+    samples = binary_belief.sample(10)
+    print(f"\nSampled states: {samples}")
+    print(f"Fraction attentive in samples: {samples.mean().item():.2f}")
+    
+    # Plot binary belief
+    plt.figure(figsize=(15, 5))
+    
+    # Current belief
+    ax1 = plt.subplot(131)
+    binary_belief.plot(ax=ax1)
+    
+    # History
+    ax2 = plt.subplot(132)
+    binary_belief.plot_history(ax=ax2, true_state=1)  # Assume true state is attentive
+    
+    # Entropy history
+    ax3 = plt.subplot(133)
+    binary_belief.plot_entropy_history(ax=ax3)
+    
+    plt.tight_layout()
+    plt.savefig("binary_belief_test.png")
+    plt.close()
+    
+    print("\nBinary belief visualization saved to binary_belief_test.png")

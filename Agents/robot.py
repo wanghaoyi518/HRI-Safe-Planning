@@ -66,6 +66,9 @@ class RobotAgent(Agent):
         self.belief_convergence_data = []
         self.reachability_analyzer = None
         self.adaptive_planner = None
+        self.belief_mode = "binary"  # Default to binary belief
+
+
         
     def register_human(self, human_agent, model_id: str = None):
         """
@@ -236,8 +239,13 @@ class RobotAgent(Agent):
             # Use simple control strategy
             return torch.zeros(self.dynamics.nu, dtype=torch.float32)
         
-        # Compute reachable sets for human
-        reachable_sets = self.compute_reachable_sets(human_id)
+        # Compute reachable sets for human based on belief mode
+        if self.belief_mode == "binary":
+            # Use binary reachability analysis
+            reachable_sets = self.compute_reachable_sets_binary(human_id)
+        else:
+            # Use interval-based reachability analysis
+            reachable_sets = self.compute_reachable_sets(human_id)
         
         # Initialize planning
         current_action = self.action.clone()
@@ -245,7 +253,10 @@ class RobotAgent(Agent):
         best_reward = float('-inf')
         
         # Initialize entropy before planning
-        entropy_before = self.belief.entropy()
+        if self.belief_mode == "binary":
+            entropy_before = self.binary_belief.entropy() if hasattr(self, 'binary_belief') else torch.tensor(0.0)
+        else:
+            entropy_before = self.belief.entropy()
         
         # Store predicted trajectory for the best action
         best_predicted_states = []
@@ -293,30 +304,45 @@ class RobotAgent(Agent):
                 # Get human action from environment state
                 human_action = environment_state[human_id].action
                 
-                # Create a copy of current belief
-                temp_belief = IntervalBelief()
-                temp_belief.intervals = self.belief.intervals.copy()
-                temp_belief.probs = self.belief.probs.clone()
-                
-                # Update belief based on robot action and human reaction
-                human_agent = self.human_models[human_id]
-                
-                def likelihood_fn(phi):
-                    return human_agent.get_observation_likelihood(
-                        human_agent.state,
-                        human_action,
-                        trial_action,  # Using trial action instead of current action
-                        phi
-                    )
-                
-                # Update temporary belief
-                temp_belief.update(likelihood_fn)
-                
-                # Compute entropy after update
-                entropy_after = temp_belief.entropy()
-                
-                # Information gain is reduction in entropy
-                info_gain = entropy_before - entropy_after
+                # Create a copy of current belief based on mode
+                if self.belief_mode == "binary":
+                    # For binary belief, compute expected information gain
+                    if hasattr(self, 'binary_belief'):
+                        # Simplified information gain estimation for binary case
+                        current_entropy = self.binary_belief.entropy()
+                        
+                        # Estimate entropy reduction (simplified)
+                        # In practice, you'd simulate the belief update
+                        expected_entropy_reduction = 0.1 * current_entropy  # Heuristic
+                        
+                        info_gain = expected_entropy_reduction
+                    else:
+                        info_gain = torch.tensor(0.0)
+                else:
+                    # Original interval-based belief update
+                    temp_belief = IntervalBelief()
+                    temp_belief.intervals = self.belief.intervals.copy()
+                    temp_belief.probs = self.belief.probs.clone()
+                    
+                    # Update belief based on robot action and human reaction
+                    human_agent = self.human_models[human_id]
+                    
+                    def likelihood_fn(phi):
+                        return human_agent.get_observation_likelihood(
+                            human_agent.state,
+                            human_action,
+                            trial_action,  # Using trial action instead of current action
+                            phi
+                        )
+                    
+                    # Update temporary belief
+                    temp_belief.update(likelihood_fn)
+                    
+                    # Compute entropy after update
+                    entropy_after = temp_belief.entropy()
+                    
+                    # Information gain is reduction in entropy
+                    info_gain = entropy_before - entropy_after
                 
                 # Add to reward using info_gain_weight
                 total_reward += self.info_gain_weight * info_gain
@@ -650,73 +676,187 @@ class RobotAgent(Agent):
         ax.grid(True, linestyle='--', alpha=0.7)
         
         return ax
-
-
-if __name__ == "__main__":
-    # Test the RobotAgent class
-    from dynamics import CarDynamics
-    from Agents.human import HumanAgent
-    from rewards import create_robot_reward, create_attentive_reward
+    # ============= Binary Belief Methods =============
     
-    # Create dynamics model
-    dynamics = CarDynamics(dt=0.1)
+    def use_binary_belief(self, initial_p_attentive: float = 0.5):
+        """
+        Switch to using binary belief instead of interval belief.
+        
+        Args:
+            initial_p_attentive: Initial probability of human being attentive
+        """
+        from Agents.belief_models import BinaryBelief
+        
+        self.belief_mode = "binary"
+        self.binary_belief = BinaryBelief(p_attentive=initial_p_attentive)
+        
+        # Store original belief if we want to switch back
+        self._original_belief = self.belief
+        
+        print(f"Switched to binary belief mode with P(attentive)={initial_p_attentive}")
     
-    # Create initial states
-    robot_init_state = torch.tensor([0.0, 0.0, 0.0, 0.0])
-    human_init_state = torch.tensor([1.0, 0.0, np.pi, 0.5])
+    def use_interval_belief(self):
+        """Switch back to interval belief mode."""
+        self.belief_mode = "interval"
+        if hasattr(self, '_original_belief'):
+            self.belief = self._original_belief
+        print("Switched to interval belief mode")
     
-    # Create human agent
-    human = HumanAgent(
-        dynamics,
-        human_init_state,
-        internal_state=torch.tensor([0.8, 0.5]),  # High attentiveness
-        reward=create_attentive_reward(),
-        name="human"
-    )
+    def update_binary_belief(self, 
+                           human_id: str,
+                           observation: torch.Tensor,
+                           use_simplified: bool = True) -> None:
+        """
+        Update binary belief based on observed human action.
+        
+        Args:
+            human_id: Identifier for the human agent
+            observation: Observed human action
+            use_simplified: If True, use simplified likelihood computation
+        """
+        if not hasattr(self, 'binary_belief'):
+            print("Warning: Binary belief not initialized. Call use_binary_belief() first.")
+            return
+            
+        if human_id not in self.human_models:
+            raise ValueError(f"Unknown human agent: {human_id}")
+            
+        human_agent = self.human_models[human_id]
+        
+        # Store initial entropy
+        initial_entropy = self.binary_belief.entropy()
+        
+        if use_simplified and hasattr(human_agent, 'get_binary_observation_likelihood'):
+            # Use binary-specific likelihood method if available
+            lik_distracted, lik_attentive = human_agent.get_binary_observation_likelihood(
+                human_agent.state,
+                observation,
+                self.action
+            )
+            
+            # Update belief with computed likelihoods
+            self.binary_belief.update(lik_attentive, lik_distracted)
+            
+        else:
+            # Fall back to general likelihood function
+            def likelihood_fn(phi):
+                # Convert binary to internal state for compatibility
+                if phi[0] > 0.5:  # Attentive
+                    internal_state = torch.tensor([1.0, 0.5])  # Attentive, moderate style
+                else:  # Distracted
+                    internal_state = torch.tensor([0.0, 0.3])  # Distracted, conservative
+                    
+                return human_agent.get_observation_likelihood(
+                    human_agent.state,
+                    observation,
+                    self.action,
+                    internal_state
+                )
+            
+            self.binary_belief.update_with_likelihood_fn(likelihood_fn)
+        
+        # Calculate information gain
+        final_entropy = self.binary_belief.entropy()
+        info_gain = initial_entropy - final_entropy
+        
+        # Store in history
+        self.entropy_history.append(final_entropy.item())
+        
+        # Get current probabilities
+        p_distracted, p_attentive = self.binary_belief.get_probabilities()
+        
+        print(f"Binary belief updated:")
+        print(f"  P(attentive) = {p_attentive:.3f}, P(distracted) = {p_distracted:.3f}")
+        print(f"  Entropy: {initial_entropy.item():.3f} -> {final_entropy.item():.3f}")
+        print(f"  Information gain: {info_gain.item():.3f}")
     
-    # Create robot agent
-    robot = RobotAgent(
-        dynamics,
-        robot_init_state,
-        reward=create_robot_reward(info_gain_weight=2.0),
-        name="robot",
-        info_gain_weight=2.0
-    )
+    def compute_reachable_sets_binary(self,
+                                human_id: str,
+                                time_horizon: int = 5,
+                                samples_per_state: int = 10) -> List[torch.Tensor]:
+        """
+        Compute reachable sets for binary human model.
+        
+        Args:
+            human_id: Identifier for the human agent
+            time_horizon: Time horizon for prediction
+            samples_per_state: Number of trajectory samples per internal state
+            
+        Returns:
+            List of tensors representing reachable sets at each time step
+        """
+        if human_id not in self.human_models:
+            raise ValueError(f"Unknown human agent: {human_id}")
+            
+        human_agent = self.human_models[human_id]
+        
+        if not hasattr(self, 'binary_belief'):
+            print("Warning: Using default uniform binary belief")
+            from Agents.belief_models import BinaryBelief
+            self.binary_belief = BinaryBelief(p_attentive=0.5)
+        
+        # Get current probabilities
+        p_distracted, p_attentive = self.binary_belief.get_probabilities()
+        
+        # Simple projection of current robot action for planning
+        robot_controls = self.action.unsqueeze(0).repeat(time_horizon, 1)
+        
+        # Use the binary-specific method on BinaryReachabilityAnalysis
+        reachable_sets = self.reachability_analyzer.compute_reachable_sets_binary(
+            human_agent.state,
+            self.state,
+            p_attentive=p_attentive,
+            p_distracted=p_distracted,
+            robot_controls=robot_controls,
+            time_horizon=time_horizon,
+            samples_per_type=samples_per_state
+        )
+        
+        self.reachable_sets = reachable_sets
+        return reachable_sets
     
-    # Register human with robot
-    robot.register_human(human)
+    def get_binary_belief_state(self) -> Dict[str, float]:
+        """
+        Get current binary belief state.
+        
+        Returns:
+            Dictionary with belief information
+        """
+        if not hasattr(self, 'binary_belief'):
+            return {"error": "Binary belief not initialized"}
+            
+        p_distracted, p_attentive = self.binary_belief.get_probabilities()
+        
+        return {
+            "p_attentive": p_attentive,
+            "p_distracted": p_distracted,
+            "entropy": self.binary_belief.entropy().item(),
+            "most_likely": "attentive" if p_attentive > 0.5 else "distracted"
+        }
     
-    # Create environment state
-    env_state = {
-        "human": human
-    }
+    def plot_binary_belief(self, ax=None):
+        """
+        Plot the current binary belief distribution.
+        
+        Args:
+            ax: Matplotlib axis (creates new figure if None)
+        """
+        if not hasattr(self, 'binary_belief'):
+            print("Binary belief not initialized")
+            return None
+            
+        return self.binary_belief.plot(ax=ax)
     
-    # Compute control for robot
-    robot_action = robot.compute_control(0, robot_init_state, env_state)
-    print(f"Robot action: {robot_action}")
-    
-    # Compute control for human
-    human_action = human.compute_control(0, human_init_state, {"robot": robot})
-    print(f"Human action: {human_action}")
-    
-    # Update robot belief based on human action
-    robot.update_belief("human", human_action)
-    
-    # Get max probability internal state
-    max_prob_state = robot.get_max_probability_internal_state()
-    print(f"Max probability internal state: {max_prob_state}")
-    
-    # Get expected internal state
-    expected_state = robot.get_expected_internal_state()
-    print(f"Expected internal state: {expected_state}")
-    
-    # Plot belief and reachable sets
-    import matplotlib.pyplot as plt
-    
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    
-    robot.plot_belief(axes[0])
-    robot.plot_reachable_sets(axes[1])
-    
-    plt.tight_layout()
-    plt.show()
+    def plot_binary_belief_history(self, true_state=None, ax=None):
+        """
+        Plot history of binary belief updates.
+        
+        Args:
+            true_state: True human state (0 or 1)
+            ax: Matplotlib axis (creates new figure if None)
+        """
+        if not hasattr(self, 'binary_belief'):
+            print("Binary belief not initialized")
+            return None
+            
+        return self.binary_belief.plot_history(ax=ax, true_state=true_state)
